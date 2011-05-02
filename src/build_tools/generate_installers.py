@@ -1,7 +1,32 @@
 #!/usr/bin/python
-# Copyright (c) 2011 The Native Client Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# Copyright 2011, Google Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following disclaimer
+# in the documentation and/or other materials provided with the
+# distribution.
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """Assemble the final installer for each platform.
 
@@ -9,7 +34,6 @@ At this time this is just a tarball.
 """
 
 import build_utils
-import installer_contents
 import optparse
 import os
 import re
@@ -19,8 +43,24 @@ import string
 import subprocess
 import sys
 
+# TODO(NaCl SDK team): Put tumbler back in the package when it's ported.
 EXCLUDE_DIRS = ['.download',
-                '.svn']
+                '.svn',
+                '.gitignore',
+                '.git',
+                'tumbler']
+INSTALLER_DIRS = ['examples',
+                  'project_templates',
+                  'third_party',
+                  'toolchain']
+
+INSTALLER_FILES = ['AUTHORS',
+                   'COPYING',
+                   'LICENSE',
+                   'NOTICE',
+                   'README']
+
+INSTALLER_CONTENTS = INSTALLER_DIRS + INSTALLER_FILES
 
 INSTALLER_NAME = 'nacl-sdk.tgz'
 
@@ -29,6 +69,12 @@ INSTALLER_NAME = 'nacl-sdk.tgz'
 WINDOWS_BUILD_PLATFORMS = ['cygwin', 'win32']
 
 # A list of files from third_party/valgrind that should be included in the SDK.
+VALGRIND_FILES = ['./third_party/valgrind/memcheck.sh',
+                  './third_party/valgrind/tsan.sh',
+                  './third_party/valgrind/nacl.supp',
+                  './third_party/valgrind/nacl.ignore',
+                  './third_party/valgrind/bin/memcheck',
+                  './third_party/valgrind/bin/tsan']
 
 
 # Return True if |file| should be excluded from the tarball.
@@ -36,11 +82,12 @@ def ExcludeFile(dir, file):
   return (file.startswith('.DS_Store') or
           file.startswith('._') or file == "make.cmd" or
           file == 'DEPS' or file == 'codereview.settings' or
-          (file == "httpd.cmd"))
+          (file == "httpd.cmd") or
+          (dir.startswith('./third_party/valgrind') and
+           dir + '/' + file not in VALGRIND_FILES))
 
 def main(argv):
-  bot = build_utils.BotAnnotator()
-  bot.Print('generate_installers is starting.')
+  print('generate_installers is starting.')
 
   parser = optparse.OptionParser()
   parser.add_option(
@@ -51,7 +98,7 @@ def main(argv):
   (options, args) = parser.parse_args(argv)
   if args:
     parser.print_help()
-    bot.Print('ERROR: invalid argument')
+    print 'ERROR: invalid argument'
     sys.exit(1)
 
   # Cache the current location so we can return here before removing the
@@ -73,8 +120,7 @@ def main(argv):
   # be a problem with python's tarfile module and symlinks.
   temp_dir = os.path.join(script_dir, 'installers_temp')
   installer_dir = os.path.join(temp_dir, version_dir)
-  bot.Print('generate_installers chose installer directory: %s' %
-            (installer_dir))
+  print('generate_installers chose installer directory: %s' % (installer_dir))
   try:
     os.makedirs(installer_dir, mode=0777)
   except OSError:
@@ -90,7 +136,7 @@ def main(argv):
   toolchain = os.path.join('toolchain', variant)
 
   # Build the NaCl tools.
-  bot.Print('generate_installers is kicking off make_nacl_tools.py.')
+  print('generate_installers is kicking off make_nacl_tools.py.')
   build_tools_dir = os.path.join(home_dir, 'src', 'build_tools')
   make_nacl_tools = os.path.join(build_tools_dir,
                                  'make_nacl_tools.py')
@@ -110,10 +156,9 @@ def main(argv):
   c_salt_path = os.path.join(home_dir, 'src', 'c_salt')
 
   # Build the examples.
-  bot.BuildStep('build examples')
-  bot.Print('generate_installers is building examples.')
+  print('generate_installers is building examples.')
   example_path = os.path.join(home_dir, 'src', 'examples')
-  make = subprocess.Popen('./scons install_prebuilt',
+  make = subprocess.Popen('make install_prebuilt',
                           env=env,
                           cwd=example_path,
                           shell=True)
@@ -122,16 +167,10 @@ def main(argv):
   # Use native tar to copy the SDK into the build location
   # because copytree has proven to be error prone and is not supported on mac.
   # We use a buffer for speed here.  -1 causes the default OS size to be used.
-  bot.BuildStep('copy to install dir')
-  bot.Print('generate_installers is copying contents to install directory.')
+  print('generate_installers is copying contents to install directory.')
   tar_src_dir = os.path.realpath(os.curdir)
-  all_contents = installer_contents.INSTALLER_CONTENTS + \
-                 installer_contents.DOCUMENTATION_FILES
-  all_contents_string = string.join(
-      installer_contents.GetFilesFromPathList(all_contents) +
-      installer_contents.GetDirectoriesFromPathList(all_contents),
-      ' ')
-  tar_cf = subprocess.Popen('tar cf - %s' % all_contents_string,
+  tar_cf = subprocess.Popen('tar cf - %s' %
+                            (string.join(INSTALLER_CONTENTS, ' ')),
                             bufsize=-1,
                             cwd=tar_src_dir, env=env, shell=True,
                             stdout=subprocess.PIPE)
@@ -142,12 +181,12 @@ def main(argv):
   assert tar_cf.poll() == 0
 
   # Clean out the cruft.
-  bot.Print('generate_installers is cleaning up the installer directory.')
+  print('generate_installers is cleaning up the installer directory.')
   os.chdir(installer_dir)
 
   # This loop prunes the result of os.walk() at each excluded dir, so that it
   # doesn't descend into the excluded dir.
-  bot.Print('generate_installers is pruning installer directory')
+  print('generate_installers is pruning installer directory')
   for root, dirs, files in os.walk('.'):
     rm_dirs = []
     for excl in EXCLUDE_DIRS:
@@ -160,8 +199,7 @@ def main(argv):
     for rm_file in rm_files:
       os.remove(rm_file)
 
-  bot.BuildStep('create archive')
-  bot.Print('generate_installers is creating the installer archive')
+  print('generate_installers is creating the installer archive')
   # Now that the SDK directory is copied and cleaned out, tar it all up using
   # the native platform tar.
   os.chdir(temp_dir)

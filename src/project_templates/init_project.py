@@ -1,6 +1,6 @@
 #!/usr/bin/python2.6
 #
-# Copyright (c) 2011 The Native Client Authors. All rights reserved.
+# Copyright 2011 The Native Client SDK Authors. All Rights Reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -48,9 +48,9 @@ SDK_ROOT_TAG = '<NACL_SDK_ROOT>'
 PROJECT_FILE_NAME = 'project_file'
 
 # Lists of source files that will be used for the new project.
-COMMON_PROJECT_FILES = ['scons']
-C_SOURCE_FILES = ['build.scons', '%s.c' % PROJECT_FILE_NAME]
-CC_SOURCE_FILES = ['build.scons', '%s.cc' % PROJECT_FILE_NAME]
+COMMON_PROJECT_FILES = ['common.mk', 'generate_nmf.py']
+C_SOURCE_FILES = ['Makefile', '%s.c' % PROJECT_FILE_NAME]
+CC_SOURCE_FILES = ['Makefile', '%s.cc' % PROJECT_FILE_NAME]
 HTML_FILES = ['%s.html' % PROJECT_FILE_NAME]
 
 
@@ -116,7 +116,7 @@ def GetCommonSourceFiles():
   """
   project_files = COMMON_PROJECT_FILES
   if sys.platform in WINDOWS_BUILD_PLATFORMS:
-    project_files.extend(['scons.bat'])
+    project_files.extend(['make.cmd'])
   return project_files
 
 

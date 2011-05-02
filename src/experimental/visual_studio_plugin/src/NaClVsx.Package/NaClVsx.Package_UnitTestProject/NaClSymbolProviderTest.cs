@@ -72,7 +72,7 @@ namespace NaClVsx.Package_UnitTestProject {
       // loop.cc(10,0): 0x20380 (32 bytes)
       DocumentPosition pos = sym_.PositionFromAddress(baseAddr + 0x20385);
       Assert.IsNotNull(pos);
-      Assert.AreEqual(pos, new DocumentPosition("loop.cc", 9));
+      Assert.AreEqual(pos, new DocumentPosition("loop.cc", 10));
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ namespace NaClVsx.Package_UnitTestProject {
       // should have formal parameter "count" and local variable "i"
       string abspath = @"c:\hg\nvs\src\loop\loop.cc";
       ulong addr = baseAddr + 0x20380;
-      var pos = new DocumentPosition(abspath, 9);
+      var pos = new DocumentPosition(abspath, 10);
 
       IEnumerable<ulong> addr2 = sym_.AddressesFromPosition(pos);
       Assert.IsTrue(addr2.Contains(addr));

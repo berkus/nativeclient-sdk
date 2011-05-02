@@ -1,6 +1,6 @@
 #! -*- python -*-
 #
-# Copyright (c) 2010 The Native Client Authors. All rights reserved.
+# Copyright (c) 2010 The Native Client SDK Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -25,4 +25,4 @@ node = env.Command(
     source='Doxyfile',
     action='${DOXYGEN} documentation/Doxyfile 2>&1 > ${TARGET}')
 AlwaysBuild(node)
-env.AddNodeAliases(node, [], 'docs')
+env.AddNodeAliases(node, ['docs'])

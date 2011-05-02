@@ -1,6 +1,6 @@
 #!/usr/bin/python2.6
 #
-# Copyright (c) 2011 The Native Client Authors. All rights reserved.
+# Copyright (c) 2011 The Native Client SDK Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -15,10 +15,10 @@ def main(argv):
   parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
   if sys.platform in ['cygwin', 'win32']:
     # Windows build
-    command = 'scons.bat'
+    command = 'hammer.bat'
   else:
     # Linux and Mac build
-    command = 'scons'
+    command = 'hammer.sh'
 
   params = [os.path.join(parentdir, command), 'bot'] + argv
   print 'Running ', params

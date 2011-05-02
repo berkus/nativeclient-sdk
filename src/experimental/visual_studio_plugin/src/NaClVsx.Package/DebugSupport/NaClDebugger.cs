@@ -11,7 +11,6 @@ using System.Threading;
 using System.Xml.Linq;
 using Google.MsAd7.BaseImpl;
 using Google.MsAd7.BaseImpl.Interfaces;
-using Google.NaClVsx.ProjectSupport;
 using Microsoft.VisualStudio.Debugger.Interop;
 using NaClVsx.DebugHelpers;
 
@@ -33,12 +32,6 @@ namespace Google.NaClVsx.DebugSupport {
     public int GdbTimeout {
       get { return gdbTimeout_; }
       set { gdbTimeout_ = value; }
-    }
-
-    // Added from Ian's RSP branch
-    public ulong BaseAddress
-    {
-      get { return baseAddress_; }
     }
 
     #region Implementation of ISimpleDebugger
@@ -67,20 +60,8 @@ namespace Google.NaClVsx.DebugSupport {
     [MethodImpl(MethodImplOptions.Synchronized)]
     public object GetRegisters(uint id)
     {
-      // FIXME -- |id| does NOT appear to be used by this function!!  
       var regs = new RegsX86_64();
       gdb_.GetRegisters(ref regs);
-      if (regs.Rip == 0) {
-        Debug.WriteLine("ERROR: regs.RIPS is 0");
-      } else {
-        Debug.WriteLine("regs.RIPS is " + String.Format("{0,4:X}", regs.Rip));
-      }
-      Debug.WriteLine(" GetRegisters.... Rip=" +
-        String.Format("{0,4:X}", regs.Rip) +
-        " Rsp=" + String.Format("{0,4:X}", regs.Rsp) +
-        " SegCS=" + String.Format("{0,4:X}", regs.SegCs) +
-        " SegDS=" + String.Format("{0,4:X}", regs.SegDs) +
-        " EFlags=" + String.Format("{0,4:X}", regs.EFlags));
       return regs;
     }
 
@@ -143,15 +124,8 @@ namespace Google.NaClVsx.DebugSupport {
     [MethodImpl(MethodImplOptions.Synchronized)]
     public void Continue() {
       //TODO(noelallen) - use correct ID below
-      RegsX86_64 regs = (RegsX86_64) GetRegisters(0);
-      ulong rip = regs.Rip;
-
-      Debug.WriteLine("CONTINUE, rip=0x" + String.Format("{0,4:X}", rip));
-      if (gdb_.HasBreakpoint(rip))
-      {
-        Debug.WriteLine("NaClDebugger.cs, Continue()" + 
-                        "-HasBreakpoint = true, rip=" + 
-                        String.Format("{0,4:X}", rip));
+      ulong rip = ((RegsX86_64) GetRegisters(0)).Rip;
+      if (gdb_.HasBreakpoint(rip)) {
         RemoveBreakpoint(rip);
         // First step one instruction, to prevent a race condition
         // where the IP gets back to the current line before we have
@@ -161,17 +135,8 @@ namespace Google.NaClVsx.DebugSupport {
         sendStopMessages_ = true;
         AddBreakpoint(rip);
       }
-      else {
-        Debug.WriteLine("NaClDebugger.cs, Continue()-HasBreakpoint = false");
-      }
 
-      var result = gdb_.RequestContinue();
-      /// Calling RequestContinueBackground causes trouble,
-      ///   because the new sel_ldr sends a 'S05' in response
-      ///   to the 'c', and RequestContinueBackground sends
-      ///   the 'c' without listening for the reply...so the
-      ///   next command sent to sel_ldr gets the 'S05' as its
-      ///   reply.
+      var result = gdb_.RequestContinueBackground();
       OnGdbContinue(result);
     }
 
@@ -232,20 +197,7 @@ namespace Google.NaClVsx.DebugSupport {
     public void GetMemory(ulong sourceAddress, Array destination, uint countInBytes) {
       GdbProxy.ResultCode result;
 
-      if (sourceAddress > baseAddress_) {
-        // FIXME (mmortensen) -- This check should eventually get removed.
-        // In the short term, it is helpful for printing errors and for setting
-        // a breakpoint to determine where we get called from when the address
-        // is not correct.
-        Debug.WriteLine("GetMemory ERROR.  sourceAddress " +
-                        String.Format("{0,4:X}", sourceAddress) + 
-                        " is larger than baseAddress " +
-                        String.Format("{0,4:X}", baseAddress_));
-      } else {
-        Debug.WriteLine("GetMemory VALID ACCESS sourceAddress " +
-                        String.Format("{0,4:X}", sourceAddress));
-        sourceAddress += baseAddress_;
-      }
+      sourceAddress += baseAddress_;
 
       result = gdb_.GetMemory(sourceAddress, destination, countInBytes);
       if (result != GdbProxy.ResultCode.DHR_OK) {
@@ -263,7 +215,7 @@ namespace Google.NaClVsx.DebugSupport {
       result = gdb_.SetMemory(destAddress, src, count);
       if (result != GdbProxy.ResultCode.DHR_OK)
       {
-        throw new ApplicationException("Failed SetMemory query");
+        throw new ApplicationException("Failed GetMemory query");
       }
     }
 
@@ -279,7 +231,7 @@ namespace Google.NaClVsx.DebugSupport {
       gdb_.SetOutputAsync(OnGdbOutput);
 
       EventWaitHandle evt = new EventWaitHandle(false, EventResetMode.AutoReset);
-      GdbProxy.ResultCode status;      
+      GdbProxy.ResultCode status;
       gdb_.GetArch(
           (r, s, d) => {
             status = r;
@@ -292,20 +244,11 @@ namespace Google.NaClVsx.DebugSupport {
         throw new TimeoutException("GDB connection timed out");
       }
 
-      string full_nexe_path = NaClProjectConfig.GetLastNexe();
       gdb_.GetPath(
           (r, s, d) => {
             status = r;
-            if (status == GdbProxy.ResultCode.DHR_OK && s!="") {
+            if (status == GdbProxy.ResultCode.DHR_OK) {
               SetPath(s);
-            }
-            else if (s == "") {
-              // Set the path based on project data, as obtained from
-              // NaClProjectconfig.NexeList.
-              // TODO(mmortensen) -- in the future we will want to query
-              // sel_ldr for the nexe name (and maybe full path) to make sure
-              // we are running the one we built.
-              SetPath(full_nexe_path);
             }
             evt.Set();
           });
@@ -360,18 +303,13 @@ namespace Google.NaClVsx.DebugSupport {
 
     #region Private Implementation
 
-    //
-    // FIXME -- WHY?? do we keep pinging sel_ldr?  gdb does NOT do this!
-    //
     private void GdbWorkerThreadProc() {
       do {
         lock (this) {
           int lastSig = 0;
-          /// FIXME -- why do we also ask for last signal?  Should we only
-          /// do this when needed, instead of ALWAYS?
           gdb_.GetLastSig(out lastSig);
         }
-      } while (gdbTermEvent_.WaitOne(gdbPingInterval_*1) == false);
+      } while (gdbTermEvent_.WaitOne(gdbPingInterval_) == false);
     }
 
     private void OnDebuggeeContinue() {}
@@ -402,7 +340,6 @@ namespace Google.NaClVsx.DebugSupport {
       stoppingEventClosures_.Clear();
 
       if (sendStopMessages_ && Stopped != null) {
-        Debug.WriteLine("Sending stopped message");
         Stopped(this,
                 SimpleDebuggerTypes.EventType.Break,
                 (SimpleDebuggerTypes.ResultCode) result);
@@ -443,7 +380,6 @@ namespace Google.NaClVsx.DebugSupport {
       // hardcoding like this.
       string status;
       path_ = msg;
-      Debug.WriteLine("SetPath {" + msg + "}");
       symbols_.LoadModule(path_, 0x0000000c00000000, out status);
       if (ModuleLoaded != null) {
         ModuleLoaded(this, msg, status);

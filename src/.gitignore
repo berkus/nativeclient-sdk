@@ -9,9 +9,6 @@
 *.gz
 *.cmd
 
-# Ignore all hidden files
-.*
-
 # Ignore all directories than contain these names
 scons-out/
 third_party/
@@ -19,5 +16,4 @@ toolchain/
 
 # Ignore these particular directories (relative to src directory)
 /build_tools/packages/
-/site_scons/
 

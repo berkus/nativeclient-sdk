@@ -1,12 +1,36 @@
 #!/usr/bin/python
-# Copyright (c) 2011 The Native Client Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# Copyright 2011, Google Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following disclaimer
+# in the documentation and/or other materials provided with the
+# distribution.
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """Assemble the final installer for windows."""
 
 import build_utils
-import installer_contents
 import optparse
 import os
 import shutil
@@ -15,19 +39,19 @@ import string
 import subprocess
 import sys
 
-IGNORE_PATTERN = ('.download*', '.svn*')
-
-# These are extra files that are exclusive to the Windows installer.
-EXTRA_WINDOWS_INSTALLER_CONTENTS = [
-    'examples/httpd.cmd',
-    'examples/make.cmd',
-    'examples/scons.bat',
-    'project_templates/scons.bat',
-]
+# TODO(NaCl SDK team):  Put tumbler back in the package when it's ported.
+IGNORE_PATTERN = ('.download*', '.svn*', '.gitignore*', '.git*', 'tumbler*')
+INSTALLER_DIRS = ['examples',
+                  'project_templates',
+                  'third_party']
+INSTALLER_FILES = ['AUTHORS',
+                   'COPYING',
+                   'LICENSE',
+                   'NOTICE',
+                   'README']
 
 def main(argv):
-  bot = build_utils.BotAnnotator()
-  bot.Print('generate_windows_installer is starting.')
+  print('generate_windows_installer is starting.')
 
   parser = optparse.OptionParser()
   parser.add_option(
@@ -38,11 +62,11 @@ def main(argv):
   (options, args) = parser.parse_args(argv)
   if args:
     parser.print_help()
-    bot.Print('ERROR: invalid argument')
+    print 'ERROR: invalid argument'
     sys.exit(1)
 
   if(options.development):
-    bot.Print('Running in development mode.')
+    print 'Running in development mode.'
 
   # Make sure that we are running python version 2.6 or higher
   (major, minor) = sys.version_info[:2]
@@ -67,19 +91,22 @@ def main(argv):
   # stuff and finally create an installer.
   temp_dir = os.path.join(script_dir, 'installers_temp')
   installer_dir = os.path.join(temp_dir, version_dir)
-  bot.Print('generate_windows_installer chose installer directory: %s' %
-            (installer_dir))
+  print('generate_windows_installer chose installer directory: %s' %
+        (installer_dir))
   try:
     os.makedirs(installer_dir, mode=0777)
   except OSError:
     pass
 
+  env = os.environ.copy()
+  # TODO (mlinck, mball) make this unnecessary
+  env['PATH'] = cygwin_dir + ';' + env['PATH']
   # TODO(mlinck, mball): maybe get rid of this
   variant = 'win_x86'
   toolchain = os.path.join('toolchain', variant)
 
   # Build the NaCl tools.
-  bot.Print('generate_windows_installer is kicking off make_nacl_tools.py.')
+  print('generate_windows_installer is kicking off make_nacl_tools.py.')
   build_tools_dir = os.path.join(home_dir, 'src', 'build_tools')
   make_nacl_tools = os.path.join(build_tools_dir,
                                  'make_nacl_tools.py')
@@ -99,11 +126,12 @@ def main(argv):
   c_salt_path = os.path.join(home_dir, 'src', 'c_salt')
 
   # Build the examples.
-  bot.BuildStep('build examples')
-  bot.Print('generate_windows_installer is building examples.')
+  print('generate_windows_installer is building examples.')
   example_path = os.path.join(home_dir, 'src', 'examples')
-  make = subprocess.Popen(['scons.bat', 'install_prebuilt'],
-                          cwd=example_path)
+  make = subprocess.Popen('make install_prebuilt',
+                          env=env,
+                          cwd=example_path,
+                          shell=True)
   assert make.wait() == 0
 
   # On windows we use copytree to copy the SDK into the build location
@@ -112,39 +140,26 @@ def main(argv):
 
   # In case previous run didn't succeed, clean this out so copytree can make
   # its target directories.
-  bot.BuildStep('copy to install dir')
-  bot.Print('generate_windows_installer is cleaning out install directory.')
+  print('generate_windows_installer is cleaning out install directory.')
   shutil.rmtree(installer_dir)
-  bot.Print('generate_windows_installer: copying files to install directory.')
-  all_contents = installer_contents.INSTALLER_CONTENTS + \
-                 EXTRA_WINDOWS_INSTALLER_CONTENTS
-  for copy_source_dir in installer_contents.GetDirectoriesFromPathList(
-      all_contents):
+  print('generate_windows_installer is copying contents to install directory.')
+  for copy_source_dir in INSTALLER_DIRS:
     copy_target_dir = os.path.join(installer_dir, copy_source_dir)
-    bot.Print("Copying %s to %s" % (copy_source_dir, copy_target_dir))
+    print("Copying %s to %s" % (copy_source_dir, copy_target_dir))
     shutil.copytree(copy_source_dir,
                     copy_target_dir,
                     symlinks=True,
                     ignore=shutil.ignore_patterns(*IGNORE_PATTERN))
-  for copy_source_file in installer_contents.GetFilesFromPathList(
-      all_contents):
-    copy_target_file = os.path.join(installer_dir, copy_source_file)
-    bot.Print("Copying %s to %s" % (copy_source_file, copy_target_file))
-    if not os.path.exists(os.path.dirname(copy_target_file)):
-      os.makedirs(os.path.dirname(copy_target_file))
-    shutil.copy(copy_source_file, copy_target_file)
-
-  # Do special processing on the user-readable documentation files.
-  for copy_source_file in installer_contents.DOCUMENTATION_FILES:
+  for copy_source_file in INSTALLER_FILES:
     copy_target_file = os.path.join(installer_dir, copy_source_file + '.txt')
-    bot.Print("Copying %s to %s" % (copy_source_file, copy_target_file))
+    print("Copying %s to %s" % (copy_source_file, copy_target_file))
     with open(copy_source_file, "U") as source_file:
       text = source_file.read().replace("\n", "\r\n")
     with open(copy_target_file, "wb") as dest_file:
       dest_file.write(text)
 
   # Clean out the cruft.
-  bot.Print('generate_windows_installer: cleaning up installer directory.')
+  print('generate_windows_installer is cleaning up the installer directory.')
   os.chdir(installer_dir)
 
   # Make everything read/write (windows needs this).
@@ -154,8 +169,7 @@ def main(argv):
     for f in files:
       os.chmod(os.path.join(root, f), stat.S_IWRITE | stat.S_IREAD)
 
-  bot.BuildStep('create archive')
-  bot.Print('generate_windows_installer is creating the installer archive')
+  print('generate_windows_installer is creating the installer archive')
   # Now that the SDK directory is copied and cleaned out, tar it all up using
   # the native platform tar.
   os.chdir(temp_dir)
@@ -165,9 +179,6 @@ def main(argv):
             ' && chmod 644 %(output)s')
   ar_name = 'nacl-sdk.tgz'
 
-  cygwin_env = os.environ.copy()
-  # TODO (mlinck, mball) make this unnecessary
-  cygwin_env['PATH'] = cygwin_dir + ';' + cygwin_env['PATH']
   # archive will be created in src\build_tools,
   # make_native_client_sdk.sh will create the real nacl-sdk.exe
   archive = os.path.join(home_dir, 'src', 'build_tools', ar_name)
@@ -176,40 +187,39 @@ def main(argv):
            {'ar_name':ar_name,
             'input':version_dir,
             'output':archive.replace('\\', '/')}),
-      env=cygwin_env, shell=True)
+      env=env, shell=True)
   assert tarball.wait() == 0
 
-  bot.BuildStep('create Windows installer')
-  bot.Print('generate_windows_installer is creating the windows installer.')
+  print('generate_windows_installer is creating the windows installer.')
   os.chdir(os.path.join(home_dir, 'src', 'build_tools'))
   if os.path.exists('done1'):
     os.remove('done1')
   for i in xrange(100):
-    bot.Print("Trying to make a script: try %i..." % (i+1))
+    print "Trying to make a script: try %i..." % (i+1)
     exefile = subprocess.Popen([
         os.path.join('..', 'third_party', 'cygwin', 'bin', 'bash.exe'),
         'make_native_client_sdk.sh', '-V',
         build_utils.RawVersion(), '-v', '-n'])
     exefile.wait()
     if os.path.exists('done1'):
-      bot.Print("NSIS script created - time to run makensis!")
+      print "NSIS script created - time to run makensis!"
       if os.path.exists('done2'):
         os.remove('done2')
       for j in xrange(100):
-        bot.Print("Trying to make a script: try %i..." % (j+1))
+        print "Trying to make a script: try %i..." % (j+1)
         exefile2 = subprocess.Popen([
             os.path.join('..', 'third_party', 'cygwin', 'bin', 'bash.exe'),
             'make_native_client_sdk2.sh', '-V',
             build_utils.RawVersion(), '-v', '-n'])
         exefile2.wait()
         if os.path.exists('done2'):
-          bot.Print("Installer created!")
+          print "Installer created!"
           break
       else:
-        bot.Print("Cannot create installer (even after 100 tries)")
+        print "Can not create installer (even after 100 tries)"
       break
   else:
-    bot.Print("Cannot create NSIS script (even after 100 tries)")
+    print "Can not create NSIS script (even after 100 tries)"
 
   # Clean up.
   os.chdir(home_dir)

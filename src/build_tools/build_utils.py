@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # Copyright (c) 2011 The Native Client Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
+# Use of this source code is governed by a BSD-style license that be
 # found in the LICENSE file.
 
 """Small utility library of python functions used by the various package
@@ -19,7 +19,7 @@ import sys
 
 # Revision numbers for the SDK
 MAJOR_REV = '0'
-MINOR_REV = '3'
+MINOR_REV = '2'
 
 # Map the string stored in |sys.platform| into a toolchain platform specifier.
 PLATFORM_MAPPING = {
@@ -122,11 +122,11 @@ def CheckPatchVersion(shell_env=None):
     return False
   return True
 
-
-def GetDepsValues(deps_loc):
+  
+def GetDepsValues(deps_loc):  
   """Returns a dict that contains all the variables defined in the DEPS file"""
   local_scope = { }
-
+  
   # This is roughly taken from depot_tools/gclient.py, with unneeded functions
   # stubbed out.
   global_scope = {
@@ -135,18 +135,18 @@ def GetDepsValues(deps_loc):
     'Var': lambda var: 'Var(%s)' % var,
     'deps_os': {},
   }
-
+  
   # This loads the contents from the DEPS file into the local_scope dict
   execfile(deps_loc, global_scope, local_scope)
-
+  
   return local_scope
-
+  
 
 def GetNaClRevision(deps_loc):
   """Returns the Subversion Revision of the NaCL Repository"""
   return GetDepsValues(deps_loc)['NACL_REVISION']
 
-
+  
 # Build a toolchain path based on the platform type.  |base_dir| is the root
 # directory which includes the platform-specific toolchain.  This could be
 # something like "/usr/local/mydir/nacl_sdk/src".  If |base_dir| is None, then
@@ -178,9 +178,10 @@ def RawVersion():
 
 
 def GetVersionNumbers():
-  '''Returns a list of 3 strings containing the version identifier'''
+  '''Returns a list of 4 strings containing the version identifier'''
   rev = str(SVNRevision())
-  return [MAJOR_REV, MINOR_REV, rev]
+  build_number = os.environ.get('BUILD_NUMBER', '0')
+  return [MAJOR_REV, MINOR_REV, rev, build_number]
 
 
 # Note that this function has to be run from within a subversion working copy,
@@ -200,26 +201,7 @@ def SVNRevision():
     return 0
 
 
+
 def VersionString():
   '''Returns the version of native client based on the svn revision number.'''
   return 'native_client_sdk_%s' % '_'.join(GetVersionNumbers())
-
-
-class BotAnnotator:
-  '''Interface to Bot Annotations
-
-  See http://www.chromium.org/developers/testing/chromium-build-infrastructure/buildbot-annotations
-  '''
-
-  def __init__(self, stream=sys.stdout):
-    self._stream = stream
-
-  def Print(self, message):
-    '''Display a message to the output stream and flush so the bots see it'''
-    self._stream.write("%s\n" % message)
-    self._stream.flush()
-
-  def BuildStep(self, name):
-    self.Print("@@@BUILD_STEP %s@@@" % name)
-
-  #TODO(mball) Add the other possible build annotations, as needed
