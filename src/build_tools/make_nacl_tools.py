@@ -1,19 +1,41 @@
 #!/usr/bin/python
-# Copyright (c) 2011 The Native Client Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# Copyright 2010, Google Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following disclaimer
+# in the documentation and/or other materials provided with the
+# distribution.
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 """Build NaCl tools (e.g. sel_ldr and ncval) at a given revision."""
 
-import build_utils
 import optparse
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-
-bot = build_utils.BotAnnotator()
 
 
 def MakeCheckoutDirs(options):
@@ -29,58 +51,68 @@ def MakeInstallDirs(options):
     os.makedirs(install_dir)
 
 def Checkout(options):
-  if not os.path.exists(os.path.join(options.work_dir, '.gclient')):
+  os.chdir(options.work_dir)
+  if not os.path.exists(".gclient"):
     # Setup client spec.
-    subprocess.check_call(
+    p = subprocess.Popen(
         'gclient config '
         'http://src.chromium.org/native_client/trunk/src/native_client',
-        cwd=options.work_dir,
         shell=True)
+    assert p.wait() == 0
   else:
-    bot.Print(".gclient found, using existing configuration.")
+    print(".gclient found, using existing configuration.")
   # Sync at the desired revision.
-  subprocess.check_call(
-      'gclient sync --rev %s' % options.revision,
-      cwd=options.work_dir,
-      shell=True)
+  p = subprocess.Popen(
+      'gclient sync --rev %s' % options.revision, shell=True)
+  assert p.wait() == 0
 
 
 def Build(options):
-  '''Build 32-bit and 64-bit versions of both sel_ldr and ncval'''
-  # TODO(dspringer): Remove nacl_dir when the --nacl-dir option is added.
-  nacl_dir = os.path.join(options.work_dir, 'native_client')
+  # Enter native_client.
+  os.chdir('native_client')
+  # Pick scons.
   if sys.platform == 'win32':
-    scons = os.path.join(nacl_dir, 'scons.bat')
+    scons = 'scons.bat'
+  else:
+    scons = './scons'
+  # Pick bit size prefix.
+  if sys.platform == 'win32':
     bits32 = 'vcvarsall.bat x86 && '
     bits64 = 'vcvarsall.bat x86_amd64 && '
   else:
-    scons = os.path.join(nacl_dir, 'scons')
     bits32 = ''
     bits64 = ''
-
-  def build_step(prefix, bits, target):
-    cmd = '%s%s -j %s --mode=%s platform=x86-%s naclsdk_validate=0 %s' % (
-        prefix, scons, options.jobs, options.variant, bits, target)
-    bot.Print('Running "%s"' % cmd)
-    subprocess.check_call(cmd, shell=True, cwd=nacl_dir)
-
-  build_step(bits32, '32', 'sdl=none sel_ldr')
-  build_step(bits64, '64', 'sdl=none sel_ldr')
-  build_step(bits32, '32', 'ncval')
-  build_step(bits64, '64', 'ncval')
+  # Build 32- and 64-bit sel_ldr.
+  p = subprocess.Popen(
+      '%s%s --mode=%s platform=x86-32 naclsdk_validate=0 sdl=none sel_ldr' % (
+      bits32, scons, options.variant), shell=True)
+  assert p.wait() == 0
+  p = subprocess.Popen(
+      '%s%s --mode=%s platform=x86-64 naclsdk_validate=0 sdl=none sel_ldr' % (
+      bits64, scons, options.variant), shell=True)
+  assert p.wait() == 0
+  # Build 32- and 64-bit ncval.
+  p = subprocess.Popen(
+      '%s%s --mode=%s platform=x86-32 naclsdk_validate=0 ncval' % (
+      bits32, scons, options.variant), shell=True)
+  assert p.wait() == 0
+  p = subprocess.Popen(
+      '%s%s --mode=%s platform=x86-64 naclsdk_validate=0 ncval' % (
+      bits64, scons, options.variant), shell=True)
+  assert p.wait() == 0
+  # Leave it.
+  os.chdir('..')
 
 
 def Install(options, tools):
   # Figure out where tools are and install the build artifacts into the
   # SDK tarball staging area.
   # TODO(bradnelson): add an 'install' alias to the main build for this.
-  # TODO(dspringer): Remove nacl_dir when the --nacl-dir option is added.
-  nacl_dir = os.path.join(options.work_dir, 'native_client')
-  tool_build_path_32 = os.path.join(nacl_dir,
+  tool_build_path_32 = os.path.join('native_client',
                                     'scons-out',
                                     '%s-x86-32' % (options.variant),
                                     'staging')
-  tool_build_path_64 = os.path.join(nacl_dir,
+  tool_build_path_64 = os.path.join('native_client',
                                     'scons-out',
                                     '%s-x86-64' % (options.variant),
                                     'staging')
@@ -100,15 +132,19 @@ def Install(options, tools):
 #Cleans up the checkout directories if -c was provided as a command line arg.
 def CleanUpCheckoutDirs(options):
   if(options.cleanup):
-    if sys.platform != 'win32':
+    if(options.variant != 'opt-win'):
       shutil.rmtree(options.work_dir, ignore_errors=True)
     else:
-      # Intentionally ignore return value since a directory might be in use.
-      subprocess.call(['rmdir', '/Q', '/S', options.work_dir],
-                      env=os.environ.copy(),
-                      shell=True)
+      rm_proc = subprocess.Popen(['rmdir',
+                                  '/Q',
+                                  '/S',
+                                  options.work_dir],
+                                  env=os.environ.copy(),
+                                  shell=True)
 
 def BuildNaClTools(options):
+  import build_utils
+  bot = build_utils.BotAnnotator()
   bot.BuildStep('checkout NaCl tools')
   MakeCheckoutDirs(options)
   MakeInstallDirs(options)
@@ -139,24 +175,21 @@ def main(argv):
       '-c', '--cleanup', action='store_true', dest='cleanup',
       default=False,
       help='whether to clean up the checkout files')
-  parser.add_option(
-      '-j', '--jobs', dest='jobs', default='1',
-      help='Number of parallel jobs to use while building nacl tools')
   (options, args) = parser.parse_args(argv)
   if args:
     parser.print_help()
-    bot.Print('ERROR: invalid argument')
+    print 'ERROR: invalid argument'
     sys.exit(1)
 
   options.toolchain = os.path.abspath(options.toolchain)
   options.exe_suffix = exe_suffix
   # Pick variant.
   if sys.platform in ['win32', 'cygwin']:
-    variant = 'dbg-win'
+    variant = 'opt-win'
   elif sys.platform == 'darwin':
-    variant = 'dbg-mac'
+    variant = 'opt-mac'
   elif sys.platform in ['linux', 'linux2']:
-    variant = 'dbg-linux'
+    variant = 'opt-linux'
   else:
     assert False
   options.variant = variant

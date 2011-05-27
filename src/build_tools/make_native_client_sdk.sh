@@ -1,7 +1,32 @@
 #!/bin/bash
-# Copyright (c) 2011 The Native Client Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
-# found in the LICENSE file.
+# Copyright 2010, Google Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     * Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#     * Redistributions in binary form must reproduce the above
+# copyright notice, this list of conditions and the following disclaimer
+# in the documentation and/or other materials provided with the
+# distribution.
+#     * Neither the name of Google Inc. nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 declare NSIS=0 verbose=0
 
@@ -25,7 +50,7 @@ while getopts "nvV:" flag ; do
       2. Downloaded source files in subdirectory "packages.src"
       3. Unpacked files in subdirectory "packages.unpacked"
       4. Setup log files in subdirectory "setup"
-      5. Ready to use file make_sdk_installer.nsi for NSIS installer
+      5. Ready to use file make_installer.nsi for NSIS installer
    setup.ini is here: http://mirrors.kernel.org/sourceware/cygwin/setup.ini
    It's not downloaded by script to keep it hermetic.
 
@@ -86,299 +111,273 @@ if ((NSIS)) && ((CygWin)) && ! [ -d NSIS ] ; then
   cp -aiv "MkLink/Release Unicode/MkLink.dll" "NSIS/Plugins"
 fi
 
-# Filetype info
-declare -A filetype
+declare -A packages
+. "${0/.sh/.conf}"
+. "`dirname \"$0\"`"/make_installer.inc
 
-# $1 is the package name.  Unpacks using tar into the packages.unpacked
-# directory.  The unpacked files are put into packages.unpacked/<package_name>,
-# where <package_name> is the same as the tarball name.  This is required for
-# the generate_section_commands routine later on.
-tar_extract_package() {
-  local instname=$1
-  local install_dir=packages.unpacked/`basename $instname`
-  if ((verbose)) ; then
-    echo "Unpacking "$instname" to "$install_dir"..." >&2
-  fi
-  if [ ! -e $install_dir ] ; then
-    mkdir -p $install_dir
-  fi
-  if ! tar xSvpf packages/$instname -C$install_dir ; then
-    # Tar should have complained for us
-    exit $?
-  fi
-}
+mkdir -p "`dirname \"$0\"`"/packages{,.src,.unpacked} setup
+rm -rf packages.unpacked/{nacl-sdk.tgz,naclsdk_win_x86.tgz}
+CYGWIN_PREFIX="third_party\\cygwin\\"
 
-# Scan all the directories in package.unpacked and determine the type of each
-# node: "file" or "directory".  Run this step prior to running the
-# generate_section_commands step.
-fill_filetype_info() {
-  # Corner cases: files created by post-install scripts, mistakes, etc
-  filetype=([bin]="directory"
-            [usr/bin]="directory"
-            [lib]="directory"
-            [usr/lib]="directory"
-            [lib/icu/current/Makefile.inc]="file"
-            [lib/rpm/rpmv.exe]="file"
-            [usr/sbin/sendmail]="file"
-            [usr/share/man/man1/gcc.1.gz]="file"
-            [usr/share/man/man1/g++.1.gz]="file"
-            [usr/share/man/man1/g77.1.gz]="file"
-            [usr/share/man/man1/mf.1]="file"
-            [usr/share/terminfo/E/Eterm]="file"
-            [usr/share/terminfo/N/NCR260VT300WPP0]="file")
-  if ((verbose)) ; then echo "Scanning filetypes..." >&2 ; fi
-  for name in `
-    for package in packages.unpacked/* ; do (
-      cd $package
-      if ((verbose)) ; then
-        echo "Find files in archive: \"${package#*/}\"..." >&2
-      fi
-      find -type f
-    ) done
-  ` ; do
-    if [[ "${name:0:10}" = "./usr/bin/" ]] ; then
-      filetype["bin/${name:10}"]="file"
-    elif [[ "${name:0:10}" = "./usr/lib/" ]] ; then
-      filetype["lib/${name:10}"]="file"
-    else
-      filetype["${name:2}"]="file"
-    fi
+parse_setup_ini
+fix_setup_inf_info
+download_package_dependences bash 0
+reqpackages=()
+sectionin=()
+allinstpackages=()
+allinstalledpackages=()
+mv "`dirname \"$0\"`"/nacl-sdk.tgz packages
+version["native_client_sdk"]="$SDK_VERSION"
+install["native_client_sdk"]="nacl-sdk.tgz"
+sdesc["native_client_sdk"]="\"Native Client SDK - examples and documentation\""
+category["native_client_sdk"]="00000000"
+category_contents["00000000"]="${category_contents[00000000]} native_client_sdk"
+requires["native_client_sdk"]="native_client_toolchain"
+version["native_client_toolchain"]="$SDK_VERSION"
+install["native_client_toolchain"]="naclsdk_win_x86.tgz"
+sdesc["native_client_toolchain"]="\"Native Client SDK - toolchain\""
+category["native_client_toolchain"]="00000000"
+category_contents["00000000"]="${category_contents[00000000]} native_client_toolchain"
+rm setup/*.lst.gz
+download_addon_packages 2
+if ((include_all_packages)) ; then
+  download_all_packages 1
+else
+  for pkgname in "${!sectionin[@]}" ; do
+    sectionin["$pkgname"]=" 1${sectionin[$pkgname]}"
   done
-  for name in `
-    for package in packages.unpacked/* ; do (
-      cd $package
-      if ((verbose)) ; then
-        echo "Find directories in archive: \"${package#*/}\"..." >&2
-      fi
-      find -type d
-    ) done
-  ` ; do
-    if [[ "${name:0:10}" = "./usr/bin/" ]] ; then
-      if [[ "bin/${filetype[${name:10}]}" = "file" ]] ; then
-        echo "bin/${filetype[${name:10}]} - file and directory... oops?" >&2
-        exit 1
-      fi
-      filetype["bin/${name:10}"]="directory"
-    elif [[ "${name:0:10}" = "./usr/lib/" ]] ; then
-      if [[ "lib/${filetype[${name:10}]}" = "file" ]] ; then
-        echo "lib/${filetype[${name:10}]} - file and directory... oops?" >&2
-        exit 1
-      fi
-      filetype["lib/${name:10}"]="directory"
-    elif ((${#name}>1)) ; then
-      if [[ "${filetype[${name:2}]}" = "file" ]] ; then
-        echo "${filetype[${name:2}]} - file and directory... oops?" >&2
-        exit 1
-      fi
-      filetype["${name:2}"]="directory"
-    fi
+  for pkgname in "${!seed[@]}" ; do
+    seed["$pkgname"]=" 1${seed[$pkgname]}"
   done
-}
-
-# Write the NSIS Section commands for a given package.  The Section
-# commands are written to stdout.
-# Parameters:
-#   $1 The NSIS Section name; e.g. "!Native Client SDK".  This is written as
-#      the first parameter to the Section command.
-#   $2 The NSIS Section ID: e.g. NativeClientSDK.  This is written as the
-#      second parameter to the Section command.
-#   $3 The package name, this must be a tarball.  The name of the tarball is
-#      assumed to be the same as the unpacked directory name.
-#   $4- The "SectionIn" command parameters (optional).  If these parameters
-#      exists, they are added in order as the value of the "SectionIn"
-#      parameter.  Use this, for example, to mark Sections as RO (read-only).
-generate_section_commands() {
-  local section_name=$1; shift;
-  local section_id=$1; shift;
-  local pkgname="$1"; shift;
-  # Write out the Section command and optional SectionIn command.
-  echo "Section \"$section_name\" $section_id"
-  # Write out the SectionIn parameters on the same line.
-  if [ $# -gt 0 ] ; then
-    echo -n "  SectionIn"
-    while [ "$1" != "" ] ; do
-      echo -n " $1"
-      shift
-    done
-    echo ""
-  fi
-  echo "  SetOutPath \$INSTDIR"
-  if [[ "$pkgname" != "" ]] ; then
-    local pkgcontent="`tar tSvpf packages/$pkgname\"\" --numeric-owner`"
-    local attrs uidgid size date time filename
-    local -A createddirs
-    createddirs[0]="done"
-    echo "$pkgcontent" | grep "^[dhl-]" |
-    while read -r attrs uidgid size date time filename ; do
-      if [[ "${attrs:0:1}" = "h" ]] ; then
-        filename="${filename%/* link to *}/"
-      elif [[ "${attrs:0:1}" = "l" ]] ; then
-        filename="${filename%/* -> *}/"
-      elif [[ "${attrs:0:1}" = "-" ]] ; then
-        if [[ "$filename" = */* ]] ; then
-          filename="${filename%/*}/"
-        else
-          filename=""
-        fi
-      fi
-      # Process directories: these each need a CreateDirectory command.
-      if [[ "$filename" != "" ]] ; then
-        filename="${filename:0:$((${#filename}-1))}"
-        if [[ "${createddirs[$filename]}" != "done" ]] ; then
-          echo "  CreateDirectory \"\$INSTDIR\\${filename//\//\\}\""
-          createddirs["$filename"]="done"
-        fi
-      fi
-    done
-    # Process plain files.  Transform '/' path separators the '\' and write a
-    # File command for each one.
-    echo "$pkgcontent" | grep "^-" |
-    while read -r attrs uidgid size date time filename ; do
-      local fname=$filename
-      fname="${fname//\//\\}"
-      fname="${fname//\$/\$\$}"
-      filename="${filename//\//\\}"
-      echo "  File \"/oname=$fname\" \"packages.unpacked\\$pkgname\\$filename\""
-    done
-    # Process hard links.
-    echo "$pkgcontent" | grep "^h" |
-    while read -r attrs uidgid size date time filename ; do
-      local linkname="${filename/ link to */}"
-      local linktargetname="${filename/* link to /}"
-      if [[ "${linkname:0:8}" = "usr/bin/" ]] ; then
-        linkname="bin/${linkname:8}"
-      elif [[ "${linkname:0:8}" = "usr/lib/" ]] ; then
-        linkname="lib/${linkname:8}"
-      fi
-      if [[ "${linktargetname:0:8}" = "usr/bin/" ]] ; then
-        linktargetname="bin/${linktargetname:8}"
-      elif [[ "${linktargetname:0:8}" = "usr/lib/" ]] ; then
-        linktargetname="lib/${linktargetname:8}"
-      fi
-      linkname="${linkname//\//\\}"
-      linkname="${linkname//\$/\$\$}"
-      linktargetname="${linktargetname//\//\\}"
-      linktargetname="${linktargetname//\$/\$\$}"
-      echo "  MkLink::Hard \"\$INSTDIR\\$linkname\" \"\$INSTDIR\\$linktargetname\""
-    done
-    # Process soft links.  There is some special processing to handle links
-    # to executable files - the link node does not need to have the '.exe'
-    # extension.
-    echo "$pkgcontent" | grep "^l" |
-    while read -r attrs uidgid size date time filename ; do
-      local linkname="${filename/ -> */}"
-      local linktargetname="${filename/* -> /}"
-      if [[ "${linktargetname:0:2}" = "./" ]] ; then
-        linktargetname="${linktargetname:2}"
-      elif [[ "${linkname:0:8}" = "usr/bin/" ]] ; then
-        linkname="bin/${linkname:8}"
-      elif [[ "${linkname:0:8}" = "usr/lib/" ]] ; then
-        linkname="lib/${linkname:8}"
-      fi
-      if [[ "${linkname%/*}/$linktargetname" = *//* ]] ; then
-        linktargetname="/${linkname%/*}/$linktargetname"
-        while [[ "$linktargetname" != //* ]] ; do
-          linktargetname="${linktargetname%/*//*}//../${linktargetname#*//}"
-        done
-        linktargetname="${linktargetname:2}"
-      fi
-      local linktargetfile="/${linkname%/*}/$linktargetname"
-      while [[ "$linktargetfile" = */../* ]] ; do
-        local linktargetprefix="${linktargetfile%%/../*}"
-        local linktargetsuffix="${linktargetfile#*/../}"
-        linktargetfile="${linktargetprefix%/*}/$linktargetsuffix"
-      done
-      if [[ "${linktargetfile:0:9}" = "/usr/bin/" ]] ; then
-        linktargetfile="bin/${linktargetfile:9}"
-      elif [[ "${linktargetfile:0:9}" = "/usr/lib/" ]] ; then
-        linktargetfile="lib/${linktargetfile:9}"
-      else
-        linktargetfile="${linktargetfile:1}"
-      fi
-      linkname="${linkname//\//\\}"
-      linkname="${linkname//\$/\$\$}"
-      if [[ "${filetype[$linktargetfile]}" = "file" ]] ; then
-        linktargetname="${linktargetname//\//\\}"
-        linktargetname="${linktargetname//\$/\$\$}"
-        if [[ "${linkname:$((${#linkname}-4))}" = ".exe" ]] ||
-           [[ "${linktargetfile:$((${#linktargetfile}-4))}" != ".exe" ]] ; then
-          echo "  MkLink::SoftF \"\$INSTDIR\\$linkname\" \"$linktargetname\""
-        else
-          echo "  MkLink::SoftF \"\$INSTDIR\\$linkname.exe\" \"$linktargetname\""
-        fi
-      elif [[ "${filetype[$linktargetfile.exe]}" = "file" ]] ; then
-        linktargetname="${linktargetname//\//\\}"
-        linktargetname="${linktargetname//\$/\$\$}"
-        if [[ "${linkname:$((${#linkname}-4))}" = ".exe" ]] ; then
-          echo "  MkLink::SoftF \"\$INSTDIR\\$linkname\" \"$linktargetname.exe\""
-        else
-          echo "  MkLink::SoftF \"\$INSTDIR\\$linkname.exe\" \"$linktargetname.exe\""
-        fi
-      elif [[ "${filetype[$linktargetfile]}" = "directory" ]] ; then
-        linktargetname="${linktargetname//\//\\}"
-        linktargetname="${linktargetname//\$/\$\$}"
-        echo "  MkLink::SoftD \"\$INSTDIR\\$linkname\" \"$linktargetname\""
-      elif [ -f packages.unpacked/*/"$linktargetfile" ] ; then
-        linktargetname="${linktargetname//\//\\}"
-        linktargetname="${linktargetname//\$/\$\$}"
-        if [[ "${linkname:$((${#linkname}-4))}" = ".exe" ]] ||
-           [[ "${linktargetfile:$((${#linktargetfile}-4))}" != ".exe" ]] ; then
-          echo "  MkLink::SoftF \"\$INSTDIR\\$linkname\" \"$linktargetname\""
-        else
-          echo "  MkLink::SoftF \"\$INSTDIR\\$linkname.exe\" \"$linktargetname\""
-        fi
-      elif [ -d packages.unpacked/*/"$linktargetfile" ] ; then
-        linktargetname="${linktargetname//\//\\}"
-        linktargetname="${linktargetname//\$/\$\$}"
-        echo "  MkLink::SoftD \"\$INSTDIR\\$linkname\" \"$linktargetname\""
-      elif [[ "$linktargetname" = "../share/webcheck/webcheck.py" ]] ; then
-        echo "  MkLink::SoftF \"\$INSTDIR\\$linkname\" \"..\\share\\webcheck\\webcheck.py\""
-      else
-        echo "Can not determine the type of link \"$linktargetname\"" >&2
-        exit 1
-      fi
-    done
-  fi
-  echo "SectionEnd"
-}
-
-SDK_VERSIONED_NAME=native_client_sdk_${SDK_VERSION//./_}
-
-# Construct the install name based on the version string.
-SDK_INSTALL_NAME="C:\\$SDK_VERSIONED_NAME"
-rm -f $SDK_INSTALL_NAME_SCRIPT
-echo "InstallDir \"$SDK_INSTALL_NAME\"" > sdk_install_name.nsh
-
-# Unpack the SDK packages and produce the NSIS Section command files from the
-# package contents.
-mkdir -p "`dirname \"$0\"`"/packages{,.src,.unpacked}
-rm -rf packages.unpacked/{nacl-sdk.tgz}
-
-tar_extract_package nacl-sdk.tgz
+fi
+for pkgname in "${allinstalledpackages[@]}" ; do
+   prefix["$pkgname"]="$CYGWIN_PREFIX"
+done
+prefix["native_client_sdk"]=""
+prefix["native_client_toolchain"]=""
+fill_required_packages
 fill_filetype_info
 
-rm -f temp_script.nsh
-generate_section_commands "!Native Client SDK" \
-                          "NativeClientSDK" \
-                          nacl-sdk.tgz \
-                          RO > temp_script.nsh
-# Do some special processing on the sdk_section.nsh file: strip out the line
-# that creates the top-level SDK directory from the installer, and strip off
-# the native_client_sdk_<version> prefix from the File commands.
-sed \
-  -e "/CreateDirectory \"\\\$INSTDIR\\\\$SDK_VERSIONED_NAME\"/d" \
-  -e s"|\"/oname=$SDK_VERSIONED_NAME\\\\|\"/oname=|"g \
-  -e s"|\\\$INSTDIR\\\\$SDK_VERSIONED_NAME\\\\|\$INSTDIR\\\\|"g \
-  temp_script.nsh > sdk_section.nsh
-rm -f temp_script.nsh
+(
+  cat <<END
+RequestExecutionLevel user
+SetCompressor $compressor
+SetCompressorDictSize 128
+Name "Native Client SDK"
+OutFile ../../nacl-sdk.exe
 
-echo "NSIS configuration file is created successfully..." >&2
+Var SVV_CmdLineParameters
+Var SVV_SelChangeInProgress
 
-# Run the NSIS compiler.
-if ((NSIS)) ; then
-  if [ -e NSIS/makensis.exe ] ; then
-    NSIS/makensis.exe /V2 make_sdk_installer.nsi
-  else
-    makensis /V2 make_sdk_installer.nsi
-  fi
-fi
+!include "x64.nsh"
+!include "FileFunc.nsh"
+END
+  declare_nsis_variables
+  cat <<END
+
+InstallDir "c:\\native_client_sdk_${SDK_VERSION//./_}"
+
+!include "MUI2.nsh"
+!include "Sections.nsh"
+
+!define MUI_HEADERIMAGE
+!define MUI_WELCOMEFINISHPAGE_BITMAP "\${NSISDIR}\\Contrib\\Graphics\\Wizard\\win.bmp"
+
+!define MUI_WELCOMEPAGE_TITLE "Welcome to the Native Client SDK $SDK_VERSION Setup Wizard"
+!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of the Native Client SDK $SDK_VERSION.\$\\r\$\\n\$\\r\$\\nNative Client SDK includes GNU toolchain adopted for Native Client use and some examples. You need Google Chrome to test the examples, but otherwise the SDK is self-contained.\$\\r\$\\n\$\\r\$\\n\$_CLICK"
+
+!define MUI_COMPONENTSPAGE_SMALLDESC
+
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+
+!define MUI_FINISHPAGE_LINK "Visit the Native Client site for news, FAQs and support"
+!define MUI_FINISHPAGE_LINK_LOCATION "http://code.google.com/chrome/nativeclient"
+
+;!define MUI_FINISHPAGE_RUN
+;!define MUI_FINISHPAGE_RUN_TEXT "Compile and Run Native Client Demos"
+;!define MUI_FINISHPAGE_RUN_FUNCTION CompileAndRunDemo
+;!define MUI_FINISHPAGE_NOREBOOTSUPPORT
+
+!define MUI_FINISHPAGE_SHOWREADME
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "Show release notes"
+!define MUI_FINISHPAGE_SHOWREADME_FUNCTION ShowReleaseNotes
+
+!insertmacro MUI_PAGE_FINISH
+
+!insertmacro MUI_LANGUAGE "English"
+
+Section "" sec_Preinstall
+  SectionIn `seq -s ' ' $((${#packages[@]}+3))`
+  Push \$R0
+  CreateDirectory "\$INSTDIR"
+  ; Owner can do anything
+  AccessControlW::GrantOnFile "\$INSTDIR" "(S-1-3-0)" "FullAccess"
+  ; Group can read
+  AccessControlW::GrantOnFile "\$INSTDIR" "(S-1-3-1)" "Traverse + GenericRead"
+  ; "Everyone" can read too
+  AccessControlW::GrantOnFile "\$INSTDIR" "(S-1-1-0)" "Traverse + GenericRead"
+  CreateDirectory "\$INSTDIR\\${CYGWIN_PREFIX}etc"
+  CreateDirectory "\$INSTDIR\\${CYGWIN_PREFIX}etc\\setup"
+  FileOpen \$R0 \$INSTDIR\\postinstall.sh w
+  FileWrite \$R0 'export PATH=/usr/local/bin:/usr/bin:/bin\$\\nexport CYGWIN="\$\$CYGWIN nodosfilewarning"\$\\n'
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\etc\\setup\\installed.log w
+  FileWrite \$R0 "INSTALLED.DB 2\$\\n"
+  FileClose \$R0
+  Pop \$R0
+SectionEnd
+END
+  generate_section_list
+  cat <<END
+Section "" sec_PostInstall
+  SectionIn `seq -s ' ' $((${#packages[@]}+3))`
+  Push \$R0
+  Push \$R1
+  Push \$R2
+  FileOpen \$R0 \$INSTDIR\\postinstall.sh a
+  FileSeek \$R0 0 END
+  FileWrite \$R0 "/bin/sort /etc/setup/installed.log -o /etc/setup/installed.db\$\\nrm /etc/setup/installed.log\$\\n"
+  FileClose \$R0
+  SetOutPath \$INSTDIR
+  nsExec::ExecToLog '"${CYGWIN_PREFIX}bin\\bash" -c ./postinstall.sh'
+  Delete \$INSTDIR\\postinstall.sh
+  FileOpen \$R0 \$INSTDIR\\${CYGWIN_PREFIX}CygWin.bat w
+  StrCpy \$R1 \$INSTDIR 1
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\n\$R1:$\r\$\\nchdir \$INSTDIR\\${CYGWIN_PREFIX//\//\\}bin\$\\r\$\\nbash --login -i$\r\$\\n"
+  FileClose \$R0
+  ;SetOutPath \$INSTDIR\examples
+  ;CreateDirectory "\$SMPROGRAMS\\Native Client SDK"
+  ;CreateShortCut "\$SMPROGRAMS\\Native Client SDK\\StartDemo.lnk" "\$INSTDIR\\${CYGWIN_PREFIX}bin\\python.exe" "run.py"
+
+  ; Find vcvars.bat and create make.cmd for native compilation
+  StrCpy \$R2 1
+  \${EnableX64FSRedirection}
+  ReadRegStr \$R0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\10.0\\Setup\\VC" "ProductDir"
+  IfErrors 0 DirFound
+  ReadRegStr \$R0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\9.0\\Setup\\VC" "ProductDir"
+  IfErrors 0 DirFound
+  ReadRegStr \$R0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\8.0\\Setup\\VC" "ProductDir"
+  IfErrors 0 DirFound
+  ReadRegStr \$R0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\7.1\\Setup\\VC" "ProductDir"
+  IfErrors 0 DirFound
+  ReadRegStr \$R0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\7.0\\Setup\\VC" "ProductDir"
+  IfErrors 0 DirFound
+  ; MessageBox MB_OK "Can not find Microsoft Visual Studio location. Native compilation is not supported."
+  StrCpy \$R0 "%VS100COMNTOOLS%\\..\\..\\VC\\bin\\"
+  StrCpy \$R2 0
+DirFound:
+  ;\${If} \${RunningX64}
+  ;  IfFileExists "\$R0bin\\x86_amd64\\vcvarsx86_amd64.bat" 0 +3
+  ;  StrCpy \$R1 "\$R0bin\\x86_amd64\\vcvarsx86_amd64.bat"
+  ;  GoTo WriteFiles
+  ;  IfFileExists "\$R0bin\\amd64\\vcvarsamd64.bat" 0 +3
+  ;  StrCpy \$R1 "\$R0bin\\amd64\\vcvarsamd64.bat"
+  ;  GoTo WriteFiles
+  ;  IfFileExists "\$R0bin\\vcvarsx86_amd64.bat" 0 +3
+  ;  StrCpy \$R1 "\$R0bin\\vcvarsx86_amd64.bat"
+  ;  GoTo WriteFiles
+  ;  IfFileExists "\$R0bin\\vcvarsamd64.bat" 0 +3
+  ;  StrCpy \$R1 "\$R0bin\\vcvarsamd64.bat"
+  ;  GoTo WriteFiles
+  ;  IfFileExists "\$R0bin\\vcvars64.bat" 0 +3
+  ;  StrCpy \$R1 "\$R0bin\\vcvars64.bat"
+  ;  GoTo WriteFiles
+  ;  ; Test and use vcvarsall.bat last since it may be present but broken
+  ;  IfFileExists "\$R0vcvarsall.bat" 0 +3
+  ;  StrCpy \$R1 "\$R0vcvarsall.bat\$\\" \$\\"x86_amd64"
+  ;  GoTo WriteFiles
+  ;  IntCmp \$R2 0 +2
+  ;  MessageBox MB_OK "Can not find vcvarsall.bat. Native compilation is not supported. Please make sure you have Microsoft Visual Studio installed with \$\\"X64 Compilers and Tools\$\\" option selected"
+  ;  StrCpy \$R1 "\$R0vcvarsall.bat\$\\" \$\\"x86_amd64"
+  ;  GoTo WriteFiles
+  ;\${Else}
+    IfFileExists "\$R0bin\\vcvars32.bat" 0 +3
+    StrCpy \$R1 "\$R0bin\\vcvars32.bat"
+    GoTo WriteFiles
+    IfFileExists "\$R0vcvars32.bat" 0 +3
+    StrCpy \$R1 "\$R0vcvars32.bat"
+    GoTo WriteFiles
+    ; Test and use vcvarsall.bat last since it may be present but broken
+    IfFileExists "\$R0vcvarsall.bat" 0 +3
+    StrCpy \$R1 "\$R0vcvarsall.bat\$\\" \$\\"x86"
+    GoTo WriteFiles
+    ; IntCmp \$R2 0 +2
+    ; MessageBox MB_OK "Can not find vcvarsall.bat. Native compilation is not supported. Please make sure you have Microsoft Visual Studio installed"
+    StrCpy \$R1 "\$R0vcvarsall.bat\$\\" \$\\"x86"
+  ;\${EndIf}
+WriteFiles:
+  IntCmp \$PKV_make 0 Skip_all_libs
+  IntCmp \$PKV_native_client_sdk 0 Skip_debug_libs1
+  ; Please keep this list and list in create_make_cmds.sh synchronyzed
+  FileOpen \$R0 \$INSTDIR\\examples\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nPATH=%~dp0..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\n\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\examples\\hello_world\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\n\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\examples\\pi_generator\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\n\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\examples\\sine_synth\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\n\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  # TODO(NaCl SDK team): Put tumbler back in once it's been ported.
+  # FileOpen \$R0 \$INSTDIR\\examples\\tumbler\\make.cmd w
+  # FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\n\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  # FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\project_templates\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nPATH=<NACL_SDK_ROOT>/third_party/cygwin/bin;%PATH%\$\\r\$\\n\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+Skip_debug_libs1:
+  GoTo Make_file_written
+Skip_all_libs:
+  IntCmp \$PKV_native_client_sdk 0 Skip_debug_libs2
+  ; Please keep this list and list in create_make_cmds.sh synchronyzed
+  FileOpen \$R0 \$INSTDIR\\examples\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nif not exist \$\"%~dp0..\\third_party\\cygwin\\bin\\make.exe\$\" goto TRY_PATH\$\\r\$\\necho Using Cygwin found in SDK\$\\r\$\\nPATH=%~dp0..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n: Use --help to check if it's GNU make or not.  It's not full-proof check\$\\r\$\\n: but it's the best we can do in a .cmd file.\$\\r\$\\n:TRY_PATH\$\\r\$\\nmake.exe --help >NUL 2>&1\$\\r\$\\nif %ERRORLEVEL% EQU 0 (\$\\r\$\\necho Using Cygwin found in PATH\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n)\$\\r\$\\n\$\\r\$\\nif not exist \$\"%SYSTEMDRIVE%\\cygwin\\bin\\make.exe\$\" goto FAIL\$\\r\$\\necho Using Cygwin found in %SYSTEMDRIVE%\\cygwin\$\\r\$\\nPATH=%SYSTEMDRIVE%\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n:FAIL\$\\r\$\\necho Cygwin with make is required for building and could not be found, install it first.\$\\r\$\\nexit /b 1\$\\r\$\\n\$\\r\$\\n:CYGWIN_FOUND\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\examples\\hello_world\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nif not exist \$\"%~dp0..\\..\\third_party\\cygwin\\bin\\make.exe\$\" goto TRY_PATH\$\\r\$\\necho Using Cygwin found in SDK\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n: Use --help to check if it's GNU make or not.  It's not full-proof check\$\\r\$\\n: but it's the best we can do in a .cmd file.\$\\r\$\\n:TRY_PATH\$\\r\$\\nmake.exe --help >NUL 2>&1\$\\r\$\\nif %ERRORLEVEL% EQU 0 (\$\\r\$\\necho Using Cygwin found in PATH\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n)\$\\r\$\\n\$\\r\$\\nif not exist \$\"%SYSTEMDRIVE%\\cygwin\\bin\\make.exe\$\" goto FAIL\$\\r\$\\necho Using Cygwin found in %SYSTEMDRIVE%\\cygwin\$\\r\$\\nPATH=%SYSTEMDRIVE%\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n:FAIL\$\\r\$\\necho Cygwin with make is required for building and could not be found, install it first.\$\\r\$\\nexit /b 1\$\\r\$\\n\$\\r\$\\n:CYGWIN_FOUND\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\examples\\pi_generator\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nif not exist \$\"%~dp0..\\..\\third_party\\cygwin\\bin\\make.exe\$\" goto TRY_PATH\$\\r\$\\necho Using Cygwin found in SDK\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n: Use --help to check if it's GNU make or not.  It's not full-proof check\$\\r\$\\n: but it's the best we can do in a .cmd file.\$\\r\$\\n:TRY_PATH\$\\r\$\\nmake.exe --help >NUL 2>&1\$\\r\$\\nif %ERRORLEVEL% EQU 0 (\$\\r\$\\necho Using Cygwin found in PATH\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n)\$\\r\$\\n\$\\r\$\\nif not exist \$\"%SYSTEMDRIVE%\\cygwin\\bin\\make.exe\$\" goto FAIL\$\\r\$\\necho Using Cygwin found in %SYSTEMDRIVE%\\cygwin\$\\r\$\\nPATH=%SYSTEMDRIVE%\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n:FAIL\$\\r\$\\necho Cygwin with make is required for building and could not be found, install it first.\$\\r\$\\nexit /b 1\$\\r\$\\n\$\\r\$\\n:CYGWIN_FOUND\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\examples\\sine_synth\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nif not exist \$\"%~dp0..\\..\\third_party\\cygwin\\bin\\make.exe\$\" goto TRY_PATH\$\\r\$\\necho Using Cygwin found in SDK\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n: Use --help to check if it's GNU make or not.  It's not full-proof check\$\\r\$\\n: but it's the best we can do in a .cmd file.\$\\r\$\\n:TRY_PATH\$\\r\$\\nmake.exe --help >NUL 2>&1\$\\r\$\\nif %ERRORLEVEL% EQU 0 (\$\\r\$\\necho Using Cygwin found in PATH\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n)\$\\r\$\\n\$\\r\$\\nif not exist \$\"%SYSTEMDRIVE%\\cygwin\\bin\\make.exe\$\" goto FAIL\$\\r\$\\necho Using Cygwin found in %SYSTEMDRIVE%\\cygwin\$\\r\$\\nPATH=%SYSTEMDRIVE%\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n:FAIL\$\\r\$\\necho Cygwin with make is required for building and could not be found, install it first.\$\\r\$\\nexit /b 1\$\\r\$\\n\$\\r\$\\n:CYGWIN_FOUND\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+  # TODO(NaCl SDK team): Put tumbler back in once it's been ported.
+  # FileOpen \$R0 \$INSTDIR\\examples\\tumbler\\make.cmd w
+  # FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nif not exist \$\"%~dp0..\\..\\third_party\\cygwin\\bin\\make.exe\$\" goto TRY_PATH\$\\r\$\\necho Using Cygwin found in SDK\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n: Use --help to check if it's GNU make or not.  It's not full-proof check\$\\r\$\\n: but it's the best we can do in a .cmd file.\$\\r\$\\n:TRY_PATH\$\\r\$\\nmake.exe --help >NUL 2>&1\$\\r\$\\nif %ERRORLEVEL% EQU 0 (\$\\r\$\\necho Using Cygwin found in PATH\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n)\$\\r\$\\n\$\\r\$\\nif not exist \$\"%SYSTEMDRIVE%\\cygwin\\bin\\make.exe\$\" goto FAIL\$\\r\$\\necho Using Cygwin found in %SYSTEMDRIVE%\\cygwin\$\\r\$\\nPATH=%SYSTEMDRIVE%\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n:FAIL\$\\r\$\\necho Cygwin with make is required for building and could not be found, install it first.\$\\r\$\\nexit /b 1\$\\r\$\\n\$\\r\$\\n:CYGWIN_FOUND\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  # FileClose \$R0
+  FileOpen \$R0 \$INSTDIR\\project_templates\\make.cmd w
+  FileWrite \$R0 "@echo off\$\\r\$\\n\$\\r\$\\nsetlocal\$\\r\$\\n\$\\r\$\\nif not exist \$\"<NACL_SDK_ROOT>/third_party/cygwin/bin/make.exe\$\" goto TRY_PATH\$\\r\$\\necho Using Cygwin found in SDK\$\\r\$\\nPATH=%~dp0..\\..\\third_party\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n: Use --help to check if it's GNU make or not.  It's not full-proof check\$\\r\$\\n: but it's the best we can do in a .cmd file.\$\\r\$\\n:TRY_PATH\$\\r\$\\nmake.exe --help >NUL 2>&1\$\\r\$\\nif %ERRORLEVEL% EQU 0 (\$\\r\$\\necho Using Cygwin found in PATH\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n)\$\\r\$\\n\$\\r\$\\nif not exist \$\"%SYSTEMDRIVE%\\cygwin\\bin\\make.exe\$\" goto FAIL\$\\r\$\\necho Using Cygwin found in %SYSTEMDRIVE%\\cygwin\$\\r\$\\nPATH=%SYSTEMDRIVE%\\cygwin\\bin;%PATH%\$\\r\$\\ngoto CYGWIN_FOUND\$\\r\$\\n\$\\r\$\\n:FAIL\$\\r\$\\necho Cygwin with make is required for building and could not be found, install it first.\$\\r\$\\nexit /b 1\$\\r\$\\n\$\\r\$\\n:CYGWIN_FOUND\$\\r\$\\nmake.exe %*\$\\r\$\\n"
+  FileClose \$R0
+Skip_debug_libs2:
+Make_file_written:
+  Pop \$R2
+  Pop \$R1
+  Pop \$R0
+SectionEnd
+END
+  generate_init_function 2
+  generate_onselchange_function
+  cat <<END
+;Function CompileAndRunDemo
+;  ExecShell "open" "\$SMPROGRAMS\\Native Client SDK\\StartDemo.lnk"
+;FunctionEnd
+Function ShowReleaseNotes
+  ExecShell "open" "http://code.google.com/chrome/nativeclient/docs/releasenotes.html"
+FunctionEnd
+END
+  echo "NSIS configuration file is created successfully..." >&2
+  touch done1
+  exit 0
+) | sed \
+  -e s"|\"/oname=sdk\\\\nacl-sdk\\\\|\"/oname=toolchain\\\\win_x86\\\\|"g \
+  -e s"|\\\$INSTDIR\\\\sdk\\\\nacl-sdk\\\\|\\\$INSTDIR\\\\toolchain\\\\win_x86\\\\|"g \
+  -e s"|\"/oname=native_client_sdk_${SDK_VERSION//./_}\\\\|\"/oname=|"g \
+  -e s"|\\\$INSTDIR\\\\native_client_sdk_${SDK_VERSION//./_}\\\\|\$INSTDIR\\\\|"g \
+  > make_native_client_sdk.nsi

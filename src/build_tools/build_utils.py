@@ -7,9 +7,7 @@
 installers.
 """
 
-import datetime
 import errno
-import fileinput
 import os
 import re
 import shutil
@@ -21,7 +19,7 @@ import sys
 
 # Revision numbers for the SDK
 MAJOR_REV = '0'
-MINOR_REV = '4'
+MINOR_REV = '3'
 
 # Map the string stored in |sys.platform| into a toolchain platform specifier.
 PLATFORM_MAPPING = {
@@ -185,17 +183,12 @@ def GetVersionNumbers():
   return [MAJOR_REV, MINOR_REV, rev]
 
 
+# Note that this function has to be run from within a subversion working copy,
+# or a git repository that is based on a subversion parent.
 def SVNRevision():
-  '''Returns the Subversion revision of this file.
-
-  This file either needs to be in either a subversion repository or
-  a git repository that is sync'd to a subversion repository using git-svn.'''
-  run_path = os.path.dirname(os.path.abspath(__file__))
-  p = subprocess.Popen('svn info', shell=True, stdout=subprocess.PIPE,
-                       cwd=run_path)
+  p = subprocess.Popen('svn info', shell=True, stdout=subprocess.PIPE)
   if p.wait() != 0:
-    p = subprocess.Popen('git svn info', shell=True, stdout=subprocess.PIPE,
-                         cwd=run_path)
+    p = subprocess.Popen('git svn info', shell=True, stdout=subprocess.PIPE)
     if p.wait() != 0:
       raise AssertionError('Cannot determine SVN revision of this repository');
 
@@ -204,7 +197,7 @@ def SVNRevision():
   if m:
     return int(m.group(1))
   else:
-    raise AssertionError('Cannot extract revision number from svn info')
+    return 0
 
 
 def VersionString():
@@ -229,39 +222,4 @@ class BotAnnotator:
   def BuildStep(self, name):
     self.Print("@@@BUILD_STEP %s@@@" % name)
 
-  def Run(self, *popenargs, **kwargs):
-    '''Implements the functionality of subprocess.check_output, but also
-    prints out the command-line and the command output.
-
-    Do not set stdout to anything because this function will redirect it
-    using a pipe.
-
-    Arguments:
-      See subprocess.Popen
-
-    returns:
-      a string containing the command output
-    '''
-    if 'stdout' in kwargs:
-      raise ValueError('stdout argument not allowed, it will be overridden.')
-    command = kwargs.get("args")
-    if command is None:
-      command = popenargs[0]
-    self.Print('Running %s' % command)
-    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
-    output, unused_err = process.communicate()
-    self.Print(output)
-    retcode = process.poll() # Note - calling wait() can cause a deadlock
-    if retcode != 0:
-      raise subprocess.CalledProcessError(retcode, command)
-    return output
-
   #TODO(mball) Add the other possible build annotations, as needed
-
-
-def UpdateReadMe(filename):
-  '''Updates the README file in the SDK with the current date and version'''
-
-  for line in fileinput.input(filename, inplace=1):
-    sys.stdout.write(line.replace('${VERSION}', RawVersion())
-                     .replace('${DATE}', str(datetime.date.today())))

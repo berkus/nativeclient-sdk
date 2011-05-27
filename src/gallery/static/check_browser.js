@@ -13,8 +13,8 @@
  */
 
 // Create a namespace object
-var browser_version = browser_version || {};
-browser_version.DEFAULT_MAX_CHROME_VERSION = 11;
+var browser_version = browser_version || {}
+
 
 /**
  * Class to provide checking for version and NativeClient.
@@ -36,15 +36,8 @@ browser_version.DEFAULT_MAX_CHROME_VERSION = 11;
  * @constructor
  */
 browser_version.BrowserChecker = function(minChromeVersion,
-                                          appVersion, plugins,
-                                          opt_maxChromeVersion) {
-  // This handles we were called with the old version that had 3 arguments:
-  //   var checker = new browser_version.BrowserChecker(10,
-  //                       navigator["appVersion"], navigator["plugins"]);
-  // Since we need to support backward compatibility, we will add the new
-  // parameter |maxChromeVersion| to the end of the param list.
-  var maxChromeVersion = opt_maxChromeVersion ||
-        browser_version.DEFAULT_MAX_CHROME_VERSION;
+                                          maxChromeVersion, appVersion,
+                                          plugins) {
 
   /**
    * Version specified by the user. This class looks to see if the browser

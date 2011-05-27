@@ -53,9 +53,6 @@ def main(argv):
       default=False,
       help=('When set, the script will forego cleanup actions that can slow ' +
             'down subsequent runs.  Useful for testing.  Defaults to False.'))
-  parser.add_option(
-      '-j', '--jobs', dest='jobs', default='1',
-      help='Number of parallel jobs to use while building')
   (options, args) = parser.parse_args(argv)
   if args:
     parser.print_help()
@@ -65,10 +62,13 @@ def main(argv):
   # Cache the current location so we can return here before removing the
   # temporary dirs.
   script_dir = os.path.abspath(os.path.dirname(__file__))
-  home_dir = os.path.realpath(os.path.dirname(os.path.dirname(script_dir)))
+  home_dir = os.path.realpath(os.path.join(script_dir, '..', '..'))
+
+  os.chdir(home_dir)
+  os.chdir('src')
 
   version_dir = build_utils.VersionString()
-  parent_dir = os.path.dirname(script_dir)
+  (parent_dir, _) = os.path.split(script_dir)
   deps_file = os.path.join(parent_dir, 'DEPS')
   NACL_REVISION = build_utils.GetNaClRevision(deps_file)
 
@@ -104,12 +104,11 @@ def main(argv):
                           '--toolchain',
                           toolchain,
                           '--revision',
-                          NACL_REVISION,
-                          '--jobs',
-                          options.jobs]
+                          NACL_REVISION]
   if not options.development:
     make_nacl_tools_args.extend(['-c'])
-  subprocess.check_call(make_nacl_tools_args, cwd=os.path.join(home_dir, 'src'))
+  nacl_tools = subprocess.Popen(make_nacl_tools_args)
+  assert nacl_tools.wait() == 0
 
   # Build c_salt
   # TODO(dspringer): add this part.
@@ -119,11 +118,11 @@ def main(argv):
   bot.BuildStep('build examples')
   bot.Print('generate_installers is building examples.')
   example_path = os.path.join(home_dir, 'src', 'examples')
-  subprocess.check_call([os.path.join(example_path, 'scons'),
-                         'install_prebuilt'],
-                         cwd=example_path,
-                         env=env,
-                         shell=True)
+  make = subprocess.Popen('make install_prebuilt',
+                          env=env,
+                          cwd=example_path,
+                          shell=True)
+  assert make.wait() == 0
 
   # Use native tar to copy the SDK into the build location
   # because copytree has proven to be error prone and is not supported on mac.
@@ -150,11 +149,12 @@ def main(argv):
 
   # Clean out the cruft.
   bot.Print('generate_installers is cleaning up the installer directory.')
+  os.chdir(installer_dir)
 
   # This loop prunes the result of os.walk() at each excluded dir, so that it
   # doesn't descend into the excluded dir.
   bot.Print('generate_installers is pruning installer directory')
-  for root, dirs, files in os.walk(installer_dir):
+  for root, dirs, files in os.walk('.'):
     rm_dirs = []
     for excl in EXCLUDE_DIRS:
       if excl in dirs:
@@ -166,29 +166,27 @@ def main(argv):
     for rm_file in rm_files:
       os.remove(rm_file)
 
-  # Update the README file with date and version number
-  build_utils.UpdateReadMe(os.path.join(installer_dir, 'README'))
-
   bot.BuildStep('create archive')
   bot.Print('generate_installers is creating the installer archive')
   # Now that the SDK directory is copied and cleaned out, tar it all up using
   # the native platform tar.
+  os.chdir(temp_dir)
 
   # Set the default shell command and output name.
   ar_cmd = ('tar cvzf %(INSTALLER_NAME)s %(input)s && cp %(INSTALLER_NAME)s '
             '%(output)s && chmod 644 %(output)s')
 
   archive = os.path.join(home_dir, INSTALLER_NAME)
-  subprocess.check_call(
+  tarball = subprocess.Popen(
       ar_cmd % (
            {'INSTALLER_NAME':INSTALLER_NAME,
             'input':version_dir,
             'output':archive}),
-      cwd=temp_dir,
-      env=env,
-      shell=True)
+      env=env, shell=True)
+  assert tarball.wait() == 0
 
   # Clean up.
+  os.chdir(home_dir)
   shutil.rmtree(temp_dir)
 
 

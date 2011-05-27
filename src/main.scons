@@ -21,7 +21,6 @@ from __future__ import with_statement
 import os
 import subprocess
 import sys
-from build_tools import build_utils
 
 #------------------------------------------------------------------------------
 HELP_STRING = """
@@ -33,11 +32,10 @@ Help for NaCl SDK
 * build a target:      ./scons <target>
 
 Supported targets:
-  * bot               Runs everything that the build and try bots run
+  * examples          Build all of the examples
   * docs              Build all of the Doxygen documentation
-  * examples          Build the examples.
   * installer         Build the SDK installer
-  * vsx_build         Build the Visual Studio Plugin
+  * bot               Runs everything that the build and try bots run
 
 Supported flags:
   * DEVELOPMENT=1     Runs with development options for the installer build
@@ -86,9 +84,9 @@ try:
   import multiprocessing
   CORE_COUNT = multiprocessing.cpu_count()
 except (ImportError, NotImplementedError):
-  CORE_COUNT = 2  # Our buildbots seem to be dual-core typically
+  CORE_COUNT = 1
 
-SetOption('num_jobs', CORE_COUNT * 2)
+SetOption('num_jobs', CORE_COUNT + 1)
 print 'Building with', GetOption('num_jobs'), 'parallel jobs'
 
 #-----------------------------------------------------------------------------
@@ -110,7 +108,6 @@ base_env = Environment(
     IS_WINDOWS = sys.platform in ['cygwin', 'win32'],
     IS_LINUX = sys.platform in ['linux', 'linux2'],
     IS_MAC = sys.platform in ['darwin', 'macos'],
-    JOB_COUNT = GetOption('num_jobs')
 )
 
 # It is possible to override these values on the command line by typing
@@ -130,7 +127,8 @@ base_env.Append(
         'documentation/build.scons',
         'build_tools/build.scons',
         'project_templates/test.scons',
-        'experimental/visual_studio_plugin',
+        # The examples dir only has tests
+        'examples/nacl_sdk_scons/test.scons',
     ],
 )
 
@@ -218,8 +216,7 @@ def AddNodeAliases(env, node, suite_names, node_name):
 base_env.AddMethod(AddNodeAliases)
 
 
-def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False,
-                         params=[], buffered=True, banner=None):
+def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False):
   """Returns a new build command that will run a unit test with a given file.
 
   Args:
@@ -227,10 +224,6 @@ def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False,
     filename: The python file that contains the unit test
     dependencies: An optional list of other files that this unit test uses
     disabled: Setting this to True will prevent the test from running
-    params: Optional additional parameters for python command
-    buffered: True=stdout is buffered until entirely complete;
-              False=stdout is immediately displayed as it occurs.
-    banner: (optional) annotation banner for build/try bots
 
   Returns:
     A SCons command node
@@ -256,10 +249,6 @@ def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False,
       None for good status
       An error string for bad status
     """
-    if banner:
-      bot = build_utils.BotAnnotator()
-      bot.BuildStep(banner)
-
     if disabled:
       sys.stdout.write("Test %s is disabled.\n" % basename)
       sys.stdout.flush()
@@ -267,7 +256,7 @@ def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False,
 
     import subprocess
 
-    app = [str(env['PYTHON']), str(source[0].abspath)] + params
+    app = [str(env['PYTHON']), str(source[0].abspath)]
     app_env = os.environ.copy()
     # We have to do this because scons overrides PYTHONPATH and does
     # not preserve what is provided by the OS.
@@ -276,28 +265,19 @@ def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False,
     ret_val = 'Error: General Test Failure'  # Indicates failure, by default
     target_str = str(target[0])
     with open(target_str, 'w') as outfile:
-      def Write(str):
-        if buffered:
-          outfile.write(str)
-          outfile.flush()
-        else:
-          sys.stdout.write(str)
-          sys.stdout.flush()
-      Write('\n-----Begin output for Test: %s\n' % basename)
-      if subprocess.call(app, env=app_env,
-                         stdout=outfile if buffered else None,
-                         stderr=outfile if buffered else None):
-        Write('-----Error: unit test failed\n')
+      outfile.write('\n-----Begin output for Test: %s\n' % basename)
+      outfile.flush()
+      if subprocess.call(app, env=app_env, stdout=outfile, stderr=outfile):
+        outfile.write('-----Error: unit test failed\n')
         ret_val = 'Error: Test Failure in %s' % basename
       else:
         ret_val = None  # Indicates success
 
-      Write('-----End output for Test: %s\n' % basename)
-    if buffered:
-      with open(target_str, 'r') as resultfile:
-        sys.stdout.write(resultfile.read())
-      sys.stdout.flush()
+      outfile.write('-----End output for Test: %s\n' % basename)
+    with open(target_str, 'r') as resultfile:
+      sys.stdout.write(resultfile.read())
 
+    sys.stdout.flush()
     return ret_val
 
   cmd = env.Command(outfilename, filename, RunPythonUnitTest)
@@ -318,60 +298,6 @@ build_env = base_env.Clone(
     )
 
 environment_list.append(build_env)
-
-#-----------------------------------------------------------------------------
-# Add a builder for examples.  This adds an Alias() node named 'examples' that
-# is always built.  There is some special handling for the clean mode, since
-# SCons relies on actual build products for its clean processing and will not
-# run Alias() actions during clean unless they actually produce something.
-
-def ExamplesBuildCommand(env):
-  '''Return the build command used to build the examples.
-  Args:
-    env: The construction Environment that is building the examples.
-  Returns:
-    A string representing the platform-specific build command that will build
-        the examples.
-  '''
-  if env.get('IS_WINDOWS'):
-    return 'scons.bat'
-  else:
-    return './scons'
-
-
-def BuildExamples(env, target, source):
-  '''Build the examples.
-
-  This runs the build command in the 'examples' directory.
-
-  Args:
-    env: The construction Environment that is building the examples.
-    target: The target that triggered this build.  Not used.
-    source: The sources used for  this build.  Not used.
-  '''
-  subprocess.check_call(ExamplesBuildCommand(env),
-                        cwd='examples',
-                        shell=True)
-
-
-def CleanExamples(env):
-  '''Clean the examples.
-
-  This runs the clean command in the 'examples' directory.
-
-  Args:
-    env: The construction Environment that is building the examples.
-  '''
-  subprocess.check_call(ExamplesBuildCommand(env) + ' --clean',
-                        cwd='examples',
-                        shell=True)
-
-
-examples_builder = build_env.Alias('examples', [], BuildExamples)
-build_env.AlwaysBuild(examples_builder)
-# Handle the clean command.
-if GetOption('clean'):
-  CleanExamples(build_env)
 
 
 # -----------------------------------------------------------------------------

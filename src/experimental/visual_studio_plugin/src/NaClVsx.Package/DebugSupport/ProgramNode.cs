@@ -414,10 +414,7 @@ namespace Google.NaClVsx.DebugSupport {
       }
     }
 
-    // Renamed from SetPath because we renamed SetPath->LoadModuleWithPath
-    // in NaClDebugger.cs
-    // FIXME(mmortensen) -- this function does not appear to be used!
-    private void LoadModuleWithPath(string msg)
+    private void SetPath(string msg)
     {
       Debug.WriteLine(msg);
       mainModule_.Url = msg;

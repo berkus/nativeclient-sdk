@@ -5,19 +5,22 @@
 #ifndef EXAMPLES_GETURL_GETURL_HANDLER_H_
 #define EXAMPLES_GETURL_GETURL_HANDLER_H_
 
+#include <ppapi/cpp/completion_callback.h>
+#include <ppapi/cpp/url_loader.h>
+#include <ppapi/cpp/url_request_info.h>
+#include <ppapi/cpp/instance.h>
 #include <string>
-#include "ppapi/cpp/completion_callback.h"
-#include "ppapi/cpp/url_loader.h"
-#include "ppapi/cpp/url_request_info.h"
-#include "ppapi/cpp/instance.h"
 
 // GetURLHandler is used to download data from |url|. When download is
-// finished or when an error occurs, it posts a message back to the browser
-// with the results encoded in the message as a string and self-destroys.
+// finished or when an error occurs, it calls JavaScript function
+// reportResult(url, result, success) (defined in geturl.html) and
+// self-destroys.
 //
 // EXAMPLE USAGE:
 // GetURLHandler* handler* = GetURLHandler::Create(instance,url);
-// handler->Start();
+// if (!handler->Start())
+//   delete handler;
+//
 //
 class GetURLHandler {
  public:
@@ -52,17 +55,16 @@ class GetURLHandler {
   // OnRead() will be called when bytes are received or when an error occurs.
   void ReadBody();
 
-  // Post a message back to the browser with the download results.
+  // Calls JS reportResult() defined in geturl.html
   void ReportResult(const std::string& fname,
                     const std::string& text,
                     bool success);
-  // Post a message back to the browser with the download results and
-  // self-destroy.  |this| is no longer valid when this method returns.
+  // Calls JS reportResult() and self-destroy (aka delete this;).
   void ReportResultAndDie(const std::string& fname,
                           const std::string& text,
                           bool success);
 
-  pp::Instance* instance_;  // Weak pointer.
+  PP_Instance instance_id_;
   std::string url_;  // URL to be downloaded.
   pp::URLRequestInfo url_request_;
   pp::URLLoader url_loader_;  // URLLoader provides an API to download URLs.

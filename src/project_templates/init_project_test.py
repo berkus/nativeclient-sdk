@@ -51,7 +51,7 @@ class TestGlobalFunctions(unittest.TestCase):
     output = init_project.GetCommonSourceFiles()
     expected_output_linux = init_project.COMMON_PROJECT_FILES
     expected_output_windows = init_project.COMMON_PROJECT_FILES
-    expected_output_windows.extend(['scons.bat'])
+    expected_output_windows.extend(['make.cmd'])
     linux_match = (output == expected_output_linux)
     windows_match = (output == expected_output_windows)
     passed = (linux_match | windows_match)
@@ -133,8 +133,8 @@ class TestProjectInitializer(unittest.TestCase):
 
   def testPrepareDirectoryContent(self):
     self.shutil_mock.copy(
-        '%s/c/build.scons' % self.script_dir,
-        'test/dir/test_project/build.scons')
+        '%s/c/Makefile' % self.script_dir,
+        'test/dir/test_project/Makefile')
     self.shutil_mock.copy(
         '%s/c/project_file.c' % self.script_dir,
         'test/dir/test_project/test_project.c')
@@ -142,11 +142,14 @@ class TestProjectInitializer(unittest.TestCase):
         '%s/html/project_file.html' % self.script_dir,
         'test/dir/test_project/test_project.html')
     self.shutil_mock.copy(
-        '%s/scons' % self.script_dir,
-        'test/dir/test_project/scons')
+        '%s/common.mk' % self.script_dir,
+        'test/dir/test_project/common.mk')
     self.shutil_mock.copy(
-        '%s/scons.bat' % self.script_dir,
-        'test/dir/test_project/scons.bat')
+        '%s/generate_nmf.py' % self.script_dir,
+        'test/dir/test_project/generate_nmf.py')
+    self.shutil_mock.copy(
+        '%s/make.cmd' % self.script_dir,
+        'test/dir/test_project/make.cmd')
     self.os_mock.path = os.path
     self.mock_factory.ReplayAll()
     self.test_subject.PrepareDirectoryContent()

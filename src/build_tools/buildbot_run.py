@@ -22,7 +22,6 @@ def main(argv):
 
   params = [os.path.join(parentdir, command), 'bot'] + argv
   print 'Running ', params
-  sys.stdout.flush()
   return subprocess.call(' '.join(params), shell=True, cwd=parentdir)
 
 
