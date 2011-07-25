@@ -64,6 +64,7 @@ def main(argv):
   version_dir = build_utils.VersionString()
   parent_dir = os.path.dirname(script_dir)
   deps_file = os.path.join(parent_dir, 'DEPS')
+  NACL_REVISION = build_utils.GetNaClRevision(deps_file)
 
   # Create a temporary directory using the version string, then move the
   # contents of src to that directory, clean the directory of unwanted
@@ -76,6 +77,31 @@ def main(argv):
     os.makedirs(installer_dir, mode=0777)
   except OSError:
     pass
+
+  # TODO(mlinck, mball): maybe get rid of this
+  variant = 'win_x86'
+  toolchain = os.path.join('toolchain', variant)
+
+  # Build the NaCl tools.
+  bot.Print('generate_windows_installer is kicking off make_nacl_tools.py.')
+  build_tools_dir = os.path.join(home_dir, 'src', 'build_tools')
+  make_nacl_tools = os.path.join(build_tools_dir,
+                                 'make_nacl_tools.py')
+  make_nacl_tools_args = [sys.executable,
+                          make_nacl_tools,
+                          '--toolchain',
+                          toolchain,
+                          '--revision',
+                          NACL_REVISION,
+                          '--jobs',
+                          options.jobs]
+  if not options.development:
+    make_nacl_tools_args.extend(['-c'])
+  subprocess.check_call(make_nacl_tools_args, cwd=os.path.join(home_dir, 'src'))
+
+  # Build c_salt
+  # TODO(dspringer): add this part.
+  c_salt_path = os.path.join(home_dir, 'src', 'c_salt')
 
   # Build the examples.
   bot.BuildStep('build examples')
@@ -180,10 +206,7 @@ def main(argv):
 
   # Clean up.
   shutil.rmtree(temp_dir)
-  return 0
 
 
 if __name__ == '__main__':
-  print "Directly running generate_windows_installer.py is no longer supported."
-  print "Please instead run 'scons.bat installer' from the src directory."
-  sys.exit(1)
+  main(sys.argv[1:])

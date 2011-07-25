@@ -25,9 +25,9 @@ DebuggeeThread::DebuggeeThread(int id,
       handle_(handle),
       parent_process_(*parent_process),
       state_(kHalted),
-      exit_code_(0),
+      last_debug_event_id_(0),
       triggered_breakpoint_addr_(NULL),
-      is_nacl_app_thread_(false) {
+      is_nexe_(false) {
   assert(NULL != parent_process);
 }
 
@@ -49,15 +49,24 @@ bool DebuggeeThread::IsHalted() const {
   return (kHalted == state_);
 }
 
+void* DebuggeeThread::FromNexeToFlatAddress(void* ip) const {
+#ifndef _WIN64
+  if (is_nexe_)
+    ip = reinterpret_cast<char*>(ip) +
+        reinterpret_cast<size_t>(parent_process().nexe_mem_base());
+#endif
+  return ip;
+}
+
 void DebuggeeThread::OnOutputDebugString(DebugEvent* debug_event) {
-  DEBUG_EVENT de = debug_event->windows_debug_event();
-  if (0 == debug_event->windows_debug_event().u.DebugString.fUnicode) {
-    size_t sz = de.u.DebugString.nDebugStringLength + 1;
+  if (0 == debug_event->windows_debug_event_.u.DebugString.fUnicode) {
+    size_t sz =
+        debug_event->windows_debug_event_.u.DebugString.nDebugStringLength + 1;
     size_t str_sz = min(kMaxStringSize, sz);
     char* tmp = static_cast<char*>(malloc(str_sz));
     if (NULL != tmp) {
       if (parent_process().ReadMemory(
-          de.u.DebugString.lpDebugStringData,
+          debug_event->windows_debug_event_.u.DebugString.lpDebugStringData,
           str_sz,
           tmp)) {
         tmp[str_sz - 1] = 0;
@@ -66,7 +75,7 @@ void DebuggeeThread::OnOutputDebugString(DebugEvent* debug_event) {
 
         if (strncmp(tmp, kNexeUuid, strlen(kNexeUuid)) == 0) {
           /// This string is coming from sel_ldr.
-          is_nacl_app_thread_ = true;
+          is_nexe_ = true;
           // Here we are passing pointers from sel_ldr to the debugger.
           // One might think that we can't use them because they are
           // valid in sel_ldr address space only. This is not true.
@@ -82,8 +91,8 @@ void DebuggeeThread::OnOutputDebugString(DebugEvent* debug_event) {
           parent_process().set_nexe_mem_base(nexe_mem_base);
           parent_process().set_nexe_entry_point(nexe_entry_point);
 
-          debug_event->set_nacl_debug_event_code(
-              DebugEvent::kThreadIsAboutToStart);
+          debug_event->nacl_debug_event_code_ =
+              DebugEvent::kThreadIsAboutToStart;
           DBG_LOG("TR03.03",
                   "NaClThreadStart mem_base=%p entry_point=%p thread_id=%d",
                   nexe_mem_base,
@@ -100,12 +109,9 @@ void DebuggeeThread::OnOutputDebugString(DebugEvent* debug_event) {
 // a) recover original code at breakpoint adddress.
 // b) return IP to the beginning of instruction (simple decrement work).
 void DebuggeeThread::OnBreakpoint(DebugEvent* debug_event) {
-  DEBUG_EVENT de = debug_event->windows_debug_event();
+  DEBUG_EVENT& de = debug_event->windows_debug_event_;
   void* ex_addr = de.u.Exception.ExceptionRecord.ExceptionAddress;
-  void* br_addr = ex_addr;
-  if (IsNaClAppThread())
-    br_addr = parent_process().FromNexeToFlatAddress(ex_addr);
-
+  void* br_addr = FromNexeToFlatAddress(ex_addr);
   Breakpoint* br = parent_process().GetBreakpoint(br_addr);
 
   DBG_LOG("TR03.04",
@@ -124,7 +130,7 @@ void DebuggeeThread::OnBreakpoint(DebugEvent* debug_event) {
   }
 }
 
-bool DebuggeeThread::Continue(ContinueOption option) {
+void DebuggeeThread::Continue(ContinueOption option) {
   if (!IsHalted()) {
     DBG_LOG("WARN03.01",
             "msg='DebuggeeThread::Continue(%s) called while thread was in an"
@@ -132,26 +138,18 @@ bool DebuggeeThread::Continue(ContinueOption option) {
             GetContinueOptionName(option),
             GetStateName(state_),
             id());
-    return false;
+    return;
   }
-  const DebugEvent& last_debug_event = parent_process().last_debug_event();
-  int last_debug_event_id =
-      last_debug_event.windows_debug_event().dwDebugEventCode;
-  if ((EXIT_THREAD_DEBUG_EVENT == last_debug_event_id) ||
-     (EXIT_PROCESS_DEBUG_EVENT == last_debug_event_id)) {
+  if (EXIT_THREAD_DEBUG_EVENT == last_debug_event_id_) {
+    debug_api().ContinueDebugEvent(parent_process().id(), id(), DBG_CONTINUE);
     SetState(kDead);
-    return (TRUE == debug_api().ContinueDebugEvent(parent_process().id(),
-                                                   id(),
-                                                   DBG_CONTINUE));
+    return;
   }
-
   if (NULL != triggered_breakpoint_addr_) {
-    void* flat_ip = GetIP();
-    if (IsNaClAppThread())
-      flat_ip = parent_process().FromNexeToFlatAddress(GetIP());
-
+    void* flat_ip = FromNexeToFlatAddress(GetIP());
     if (flat_ip == triggered_breakpoint_addr_) {
-      return ContinueFromBreakpoint();
+      ContinueFromBreakpoint();
+      return;
     } else {
       // Just in case user changed IP so that it's not pointing to
       // triggered breakpoint, we need to:
@@ -171,20 +169,16 @@ bool DebuggeeThread::Continue(ContinueOption option) {
   if (kContinueAndPassException == option)
     flags = DBG_EXCEPTION_NOT_HANDLED;
 
+  debug_api().ContinueDebugEvent(parent_process().id(), id(), flags);
   SetState(kRunning);
-  return (TRUE == debug_api().ContinueDebugEvent(parent_process().id(),
-                                                 id(),
-                                                 flags));
 }
 
 /// Implements first steps of 'Continue from breakpoint' algorithm,
 /// described in |DebuggeeThread::OnDebugEvent| method.
-bool DebuggeeThread::ContinueFromBreakpoint() {
+void DebuggeeThread::ContinueFromBreakpoint() {
   SetState(kContinueFromBreakpoint);
   EnableSingleStep(true);
-  return (TRUE == debug_api().ContinueDebugEvent(parent_process().id(),
-                                                 id(),
-                                                 DBG_CONTINUE));
+  debug_api().ContinueDebugEvent(parent_process().id(), id(), DBG_CONTINUE);
 }
 
 void DebuggeeThread::OnSingleStep(DebugEvent* debug_event) {
@@ -218,7 +212,7 @@ void DebuggeeThread::OnSingleStep(DebugEvent* debug_event) {
 }
 
 void DebuggeeThread::OnDebugEvent(DebugEvent* debug_event) {
-  DEBUG_EVENT de = debug_event->windows_debug_event();
+  last_debug_event_id_ = debug_event->windows_debug_event_.dwDebugEventCode;
   EnableSingleStep(false);
 
   // Thread expected 'SingleStep' exception due to 'continue from breakpoint'
@@ -243,10 +237,7 @@ void DebuggeeThread::OnDebugEvent(DebugEvent* debug_event) {
   if (!debug_event->IsSingleStep() &&
       (kContinueFromBreakpoint == state_) &&
       (NULL != triggered_breakpoint_addr_)) {
-    void* flat_ip = GetIP();
-    if (IsNaClAppThread())
-      flat_ip = parent_process().FromNexeToFlatAddress(flat_ip);
-
+    void* flat_ip = FromNexeToFlatAddress(GetIP());
     if (flat_ip != triggered_breakpoint_addr_) {
       Breakpoint* br =
           parent_process().GetBreakpoint(triggered_breakpoint_addr_);
@@ -256,18 +247,9 @@ void DebuggeeThread::OnDebugEvent(DebugEvent* debug_event) {
     }
   }
 
-  // Now we can proceed with debug event.
-  switch (de.dwDebugEventCode) {
+  switch (debug_event->windows_debug_event_.dwDebugEventCode) {
     case OUTPUT_DEBUG_STRING_EVENT: {
       OnOutputDebugString(debug_event);
-      break;
-    }
-    case EXIT_THREAD_DEBUG_EVENT: {
-      exit_code_ = de.u.ExitThread.dwExitCode;
-      break;
-    }
-    case EXIT_PROCESS_DEBUG_EVENT: {
-      exit_code_ = de.u.ExitProcess.dwExitCode;
       break;
     }
     case EXCEPTION_DEBUG_EVENT: {
@@ -341,40 +323,25 @@ void DebuggeeThread::Kill() {
 }
 
 bool DebuggeeThread::GetContext(CONTEXT* context) {
-  if (!parent_process().IsHalted())
-    return false;
-
   context->ContextFlags = CONTEXT_ALL;
   return (debug_api().GetThreadContext(handle_, context) != FALSE);
 }
 
 bool DebuggeeThread::SetContext(const CONTEXT& context) {
-  if (!parent_process().IsHalted())
-    return false;
-
   CONTEXT context_copy = context;
   return (debug_api().SetThreadContext(handle_, &context_copy) != FALSE);
 }
 
 bool DebuggeeThread::GetWowContext(WOW64_CONTEXT* context) {
-  if (!parent_process().IsHalted())
-    return false;
-
   context->ContextFlags = CONTEXT_ALL;
   return (debug_api().Wow64GetThreadContext(handle_, context) != FALSE);
 }
 
 bool DebuggeeThread::SetWowContext(const WOW64_CONTEXT& context) {
-  if (!parent_process().IsHalted())
-    return false;
-
   return (debug_api().Wow64SetThreadContext(handle_, &context) != FALSE);
 }
 
 void* DebuggeeThread::GetIP() {
-  if (!parent_process().IsHalted())
-    return false;
-
   if (parent_process().IsWoW()) {
     WOW64_CONTEXT context;
     GetWowContext(&context);
@@ -390,26 +357,21 @@ void* DebuggeeThread::GetIP() {
   }
 }
 
-bool DebuggeeThread::SetIP(void* ip) {
-  if (!parent_process().IsHalted())
-    return false;
-
+void DebuggeeThread::SetIP(void* ip) {
   if (parent_process().IsWoW()) {
     WOW64_CONTEXT context;
-    if (!GetWowContext(&context))
-      return false;
+    GetWowContext(&context);
     context.Eip = reinterpret_cast<DWORD>(ip);
-    return SetWowContext(context);
+    SetWowContext(context);
   } else {
     CONTEXT ct;
-    if (!GetContext(&ct))
-      return false;
+    GetContext(&ct);
 #ifdef _WIN64
     ct.Rip = reinterpret_cast<DWORD64>(ip);
 #else
     ct.Eip = reinterpret_cast<DWORD>(ip);
 #endif
-    return SetContext(ct);
+    SetContext(ct);
   }
 }
 }  // namespace debug

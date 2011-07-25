@@ -24,10 +24,16 @@ EXCLUDE_DIRS = ['.download',
 
 INSTALLER_NAME = 'nacl-sdk.tgz'
 
+# These are extra files that are exclusive to the Mac and Linux installers.
+EXTRA_POSIX_INSTALLER_CONTENTS = [
+    'toolchain/',
+]
 
 # A list of all platforms that should use the Windows-based build strategy
 # (which makes a self-extracting zip instead of a tarball).
 WINDOWS_BUILD_PLATFORMS = ['cygwin', 'win32']
+
+# A list of files from third_party/valgrind that should be included in the SDK.
 
 
 # Return True if |file| should be excluded from the tarball.
@@ -36,7 +42,6 @@ def ExcludeFile(dir, file):
           file.startswith('._') or file == "make.cmd" or
           file == 'DEPS' or file == 'codereview.settings' or
           (file == "httpd.cmd"))
-
 
 def main(argv):
   bot = build_utils.BotAnnotator()
@@ -65,6 +70,7 @@ def main(argv):
   version_dir = build_utils.VersionString()
   parent_dir = os.path.dirname(script_dir)
   deps_file = os.path.join(parent_dir, 'DEPS')
+  NACL_REVISION = build_utils.GetNaClRevision(deps_file)
 
   # Create a temporary directory using the version string, then move the
   # contents of src to that directory, clean the directory of unwanted
@@ -82,21 +88,42 @@ def main(argv):
   # Decide environment to run in per platform.
   env = os.environ.copy()
 
+  if sys.platform == 'darwin':
+    variant = 'mac_x86'
+  elif sys.platform in ['linux', 'linux2']:
+    variant = 'linux_x86'
+  toolchain = os.path.join('toolchain', variant)
+
+  # Build the NaCl tools.
+  bot.Print('generate_installers is kicking off make_nacl_tools.py.')
+  build_tools_dir = os.path.join(home_dir, 'src', 'build_tools')
+  make_nacl_tools = os.path.join(build_tools_dir,
+                                 'make_nacl_tools.py')
+  make_nacl_tools_args = [sys.executable,
+                          make_nacl_tools,
+                          '--toolchain',
+                          toolchain,
+                          '--revision',
+                          NACL_REVISION,
+                          '--jobs',
+                          options.jobs]
+  if not options.development:
+    make_nacl_tools_args.extend(['-c'])
+  subprocess.check_call(make_nacl_tools_args, cwd=os.path.join(home_dir, 'src'))
+
+  # Build c_salt
+  # TODO(dspringer): add this part.
+  c_salt_path = os.path.join(home_dir, 'src', 'c_salt')
+
   # Build the examples.
   bot.BuildStep('build examples')
   bot.Print('generate_installers is building examples.')
   example_path = os.path.join(home_dir, 'src', 'examples')
-  if not options.development:
-    subprocess.check_call([os.path.join(example_path, 'scons'), '-c',
-                           'install_prebuilt'],
-                          cwd=example_path,
-                          env=env,
-                          shell=True)
   subprocess.check_call([os.path.join(example_path, 'scons'),
                          'install_prebuilt'],
-                        cwd=example_path,
-                        env=env,
-                        shell=True)
+                         cwd=example_path,
+                         env=env,
+                         shell=True)
 
   # Use native tar to copy the SDK into the build location
   # because copytree has proven to be error prone and is not supported on mac.
@@ -104,13 +131,9 @@ def main(argv):
   bot.BuildStep('copy to install dir')
   bot.Print('generate_installers is copying contents to install directory.')
   tar_src_dir = os.path.realpath(os.curdir)
-  all_contents = (installer_contents.INSTALLER_CONTENTS +
-                  installer_contents.DOCUMENTATION_FILES)
-  if sys.platform == 'darwin':
-    all_contents += installer_contents.MAC_ONLY_CONTENTS
-  else:
-    all_contents += installer_contents.LINUX_ONLY_CONTENTS
-
+  all_contents = installer_contents.INSTALLER_CONTENTS + \
+                 installer_contents.DOCUMENTATION_FILES + \
+                 EXTRA_POSIX_INSTALLER_CONTENTS
   all_contents_string = string.join(
       installer_contents.GetFilesFromPathList(all_contents) +
       installer_contents.GetDirectoriesFromPathList(all_contents),
@@ -167,10 +190,11 @@ def main(argv):
 
   # Clean up.
   shutil.rmtree(temp_dir)
-  return 0
 
 
 if __name__ == '__main__':
-  print "Directly running generate_installers.py is no longer supported."
-  print "Please instead run './scons installer' from the src directory."
-  sys.exit(1)
+  if(sys.platform in WINDOWS_BUILD_PLATFORMS):
+    import generate_windows_installer
+    generate_windows_installer.main(sys.argv[1:])
+  else:
+    main(sys.argv[1:])

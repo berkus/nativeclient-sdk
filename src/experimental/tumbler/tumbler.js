@@ -1,6 +1,6 @@
-// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2011 The Native Client Authors.
+// Use of this source code is governed by a BSD-style license that can
+// be found in the LICENSE file.
 
 /**
  * @fileoverview  The tumbler Application object.  This object instantiates a
@@ -19,69 +19,44 @@
  * @constructor
  */
 tumbler.Application = function() {
-  /**
-   * The native module for the application.  This refers to the module loaded
-   * via the <embed> tag.
-   * @type {Element}
-   * @private
-   */
-  this.module_ = null;
-
-  /**
-   * The trackball object.
-   * @type {tumbler.Trackball}
-   * @private
-   */
-  this.trackball_ = null;
-
-  /**
-   * The mouse-drag event object.
-   * @type {tumbler.Dragger}
-   * @private
-   */
-  this.dragger_ = null;
-
-  /**
-   * The function objects that get attached as event handlers.  These are
-   * cached so that they can be removed when they are no longer needed.
-   * @type {function}
-   * @private
-   */
-  this.boundModuleDidLoad_ = null;
 }
 
 /**
- * The ids used for elements in the DOM.  The Tumlber Application expects these
- * elements to exist.
- * @enum {string}
+ * The native module for the application.  This refers to the module loaded via
+ * the <embed> tag.
+ * @type {Element}
  * @private
  */
-tumbler.Application.DomIds_ = {
-  MODULE: 'tumbler',  // The <embed> element representing the NaCl module
-  VIEW: 'tumbler_view'  // The <div> containing the NaCl element.
-}
+tumbler.Application.prototype.module_ = null;
+
+/**
+ * The trackball object.
+ * @type {tumbler.Trackball}
+ * @private
+ */
+tumbler.Application.prototype.trackball_ = null;
+
+/**
+ * The mouse-drag event object.
+ * @type {tumbler.Dragger}
+ * @private
+ */
+tumbler.Application.prototype.dragger_ = null;
+
+/**
+ * A timer used to retry loading the native client module; the application
+ * tries to reload the module every 100 msec.
+ * @type {Number}
+ * @private
+ */
+tumbler.Application.prototype.loadTimer_ = null;
 
 /**
  * Called by the module loading function once the module has been loaded.
  * @param {?Element} nativeModule The instance of the native module.
  */
-tumbler.Application.prototype.moduleDidLoad = function() {
-  this.module_ = document.getElementById(tumbler.Application.DomIds_.MODULE);
-  // Unbind the load function.
-  this.boundModuleDidLoad_ = null;
-
-  /**
-   * Set the camera orientation property on the NaCl module.
-   * @param {Array.<number>} orientation A 4-element array representing the
-   *     camera orientation as a quaternion.
-   */
-  this.module_.setCameraOrientation = function(orientation) {
-      var methodString = 'setCameraOrientation ' +
-                         'orientation:' +
-                         JSON.stringify(orientation);
-      this.postMessage(methodString);
-  }
-
+tumbler.Application.prototype.moduleDidLoad = function(nativeModule) {
+  this.module_ = nativeModule;
   this.trackball_ = new tumbler.Trackball();
   this.dragger_ = new tumbler.Dragger(this.module_);
   this.dragger_.addDragListener(this.trackball_);
@@ -105,20 +80,12 @@ tumbler.Application.prototype.assert = function(cond, message) {
  * is allocated and all the events get wired up.
  * @param {?String} opt_contentDivName The id of a DOM element in which to
  *     embed the Native Client module.  If unspecified, defaults to
- *     VIEW.  The DOM element must exist.
+ *     DEFAULT_DIV_NAME.  The DOM element must exist.
  */
 tumbler.Application.prototype.run = function(opt_contentDivName) {
-  contentDivName = opt_contentDivName || tumbler.Application.DomIds_.VIEW;
+  contentDivName = opt_contentDivName || tumbler.Application.DEFAULT_DIV_NAME;
   var contentDiv = document.getElementById(contentDivName);
   this.assert(contentDiv, "Missing DOM element '" + contentDivName + "'");
-
-  // Note that the <EMBED> element is wrapped inside a <DIV>, which has a 'load'
-  // event listener attached.  This method is used instead of attaching the
-  // 'load' event listener directly to the <EMBED> element to ensure that the
-  // listener is active before the NaCl module 'load' event fires.
-  this.boundModuleDidLoad_ = this.moduleDidLoad.bind(this);
-  contentDiv.addEventListener('load', this.boundModuleDidLoad_, true);
-
   // Load the published .nexe.  This includes the 'nacl' attribute which
   // shows how to load multi-architecture modules.  Each entry in the "nexes"
   // object in the  .nmf manifest file is a key-value pair: the key is the
@@ -126,8 +93,21 @@ tumbler.Application.prototype.run = function(opt_contentDivName) {
   // NaCl module.  To load the debug versions of your .nexes, set the 'nacl'
   //  attribute to the _dbg.nmf version of the manifest file.
   contentDiv.innerHTML = '<embed id="'
-                         + tumbler.Application.DomIds_.MODULE + '" '
-                         + 'src=tumbler.nmf '
+                         + tumbler.Application.TUMBLER_MODULE_NAME + '" '
+                         + 'nacl=tumbler.nmf '
                          + 'type="application/x-nacl" '
-                         + 'width="480" height="480" />'
+                         + 'width="480" height="480" '
+                         + 'onload="moduleDidLoad()" />'
 }
+
+/**
+ * The name for the pepper module element.
+ * @type {string}
+ */
+tumbler.Application.TUMBLER_MODULE_NAME = 'tumbler';
+
+/**
+ * The default name for the 3D content div element.
+ * @type {string}
+ */
+tumbler.Application.DEFAULT_DIV_NAME = 'tumbler_content';

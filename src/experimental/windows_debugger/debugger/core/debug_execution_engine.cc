@@ -1,49 +1,33 @@
-// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-#include "debugger/core/debug_api.h"
-#include <algorithm>
 #include "debugger/core/debug_execution_engine.h"
 #include "debugger/core/debug_logger.h"
 #include "debugger/core/debuggee_process.h"
+#include "debugger/core/debug_api.h"
 
-namespace {
-/// Timeout for exiting processes. If nothing happens for
-/// kWaitOnExitMs milliseconds, ExecutionEngine quits waiting
-/// for debug events.
-int kWaitOnExitMs = 300;
-
-bool not_dead_proc(debug::IDebuggeeProcess* proc) {
-  return debug::IDebuggeeProcess::kDead != proc->state();
-}
-void delete_proc(debug::IDebuggeeProcess* proc) { delete proc; }
-void detach_proc(debug::IDebuggeeProcess* proc) {
-  proc->Detach();
-}
-void kill_proc(debug::IDebuggeeProcess* proc) {
-  proc->Kill();
-}
-}  // namespace
+//TODO: add unit tests
+//TODO: add comments
+//TODO: write a design doc with FSM, sequence diagrams, class diagram, obj diagram...
+//TODO: make sure debug::core has enough api to implement RSP debug_server
 
 namespace debug {
 
-ExecutionEngine::ExecutionEngine(DebugAPI* debug_api)
-  : debug_api_(*debug_api) {
+ExecutionEngine::ExecutionEngine(DebugAPI& debug_api)
+  : debug_api_(debug_api) {
 }
 
 ExecutionEngine::~ExecutionEngine() {
-  Stop(kWaitOnExitMs);
-  std::for_each(processes_.begin(), processes_.end(), delete_proc);
-  processes_.clear();
+  Stop();
 }
 
-IDebuggeeProcess* ExecutionEngine::CreateDebuggeeProcess(int pid,
-                                                         HANDLE handle,
-                                                         HANDLE file_handle) {
-  return new DebuggeeProcess(pid, handle, file_handle, &debug_api_);
+DebuggeeProcess* ExecutionEngine::CreateDebuggeeProcess(int id,
+                                                        HANDLE handle,
+                                                        HANDLE file_handle,
+                                                        DebugAPI& debug_api) {
+  return new DebuggeeProcess(id, handle, file_handle, debug_api);
 }
 
 bool ExecutionEngine::StartProcess(const char* cmd, const char* work_dir) {
+  Stop();
+
   STARTUPINFO si;
   memset(&si, 0, sizeof(si));
   si.cb = sizeof(si);
@@ -55,7 +39,7 @@ bool ExecutionEngine::StartProcess(const char* cmd, const char* work_dir) {
     DBG_LOG("TR01.00", "Memory allocation error.");
     return false;
   }
-  BOOL res = debug_api_.CreateProcess(NULL,
+  BOOL res = debug_api_.CreateProcess(NULL, 
                                       cmd_dup,
                                       NULL,
                                       NULL,
@@ -74,67 +58,71 @@ bool ExecutionEngine::StartProcess(const char* cmd, const char* work_dir) {
   return true;
 }
 
-bool ExecutionEngine::AttachToProcess(int pid) {
-  return (TRUE == debug_api_.DebugActiveProcess(pid)) ? true : false;
+bool ExecutionEngine::AttachToProcess(int id) {
+  Stop();
+  return (TRUE == debug_api_.DebugActiveProcess(id)) ? true : false;
 }
 
 void ExecutionEngine::DetachAll() {
-  std::for_each(processes_.begin(), processes_.end(), detach_proc);
-  std::for_each(processes_.begin(), processes_.end(), delete_proc);
+  std::deque<DebuggeeProcess*>::const_iterator it = processes_.begin();
+  while (it != processes_.end()) {
+    DebuggeeProcess* proc = *it;
+    proc->Detach();
+    delete proc;
+    ++it;
+  }
   processes_.clear();
 }
 
-IDebuggeeProcess* ExecutionEngine::GetProcess(int pid) {
-  ProcessConstIter it = processes_.begin();
+DebuggeeProcess* ExecutionEngine::GetProcess(int id) {
+  std::deque<DebuggeeProcess*>::const_iterator it = processes_.begin();
   while (it != processes_.end()) {
-    IDebuggeeProcess* proc = *it;
+    DebuggeeProcess* proc = *it;
     ++it;
-    if (pid == proc->id())
+    if ((NULL != proc) && (id == proc->id()))
       return proc;
   }
   return NULL;
 }
 
-void ExecutionEngine::GetProcessIds(std::deque<int>* processes) const {
+void ExecutionEngine::GetProcessesIds(std::deque<int>* processes) const {
   processes->clear();
-  ProcessConstIter it = processes_.begin();
+  std::deque<DebuggeeProcess*>::const_iterator it = processes_.begin();
   while (it != processes_.end()) {
-    processes->push_back((*it)->id());
+    DebuggeeProcess* proc = *it;
+    ++it;
+    if (NULL != proc)
+      processes->push_back(proc->id());
+  }
+}
+
+void ExecutionEngine::RemoveDeadProcess() {
+  //remove dead process, if any.
+  std::deque<DebuggeeProcess*>::const_iterator it = processes_.begin();
+  while (it != processes_.end()) {
+    DebuggeeProcess* proc = *it;
+    if ((proc->state() == DebuggeeProcess::kDead)) {
+      delete proc;
+      processes_.erase(it);
+      break;
+    }
     ++it;
   }
 }
 
-void ExecutionEngine::RemoveDeadProcesses() {
-  ProcessIter it = std::partition(processes_.begin(),
-                                  processes_.end(),
-                                  not_dead_proc);
-  std::for_each(it, processes_.end(), delete_proc);
-  processes_.erase(it, processes_.end());
-}
+void ExecutionEngine::OnDebugEvent(const DEBUG_EVENT& debug_event, DebuggeeProcess** halted_process) {
+  RemoveDeadProcess();
 
-bool ExecutionEngine::WaitForDebugEventAndDispatchIt(int wait_ms,
-                                                     int* halted_pid) {
-  RemoveDeadProcesses();
-  DEBUG_EVENT de;
-  if (debug_api_.WaitForDebugEvent(&de, wait_ms)) {
-    int pid = OnDebugEvent(de);
-    if (NULL != halted_pid)
-      *halted_pid = pid;
-    return true;
-  }
-  return false;
-}
+  debug_event_.windows_debug_event_ = debug_event;
+  debug_event_.nacl_debug_event_code_ = DebugEvent::kNotNaClDebugEvent;
 
-int ExecutionEngine::OnDebugEvent(const DEBUG_EVENT& debug_event) {
-  debug_event_.set_windows_debug_event(debug_event);
-  debug_event_.set_nacl_debug_event_code(DebugEvent::kNotNaClDebugEvent);
-
-  IDebuggeeProcess* process = GetProcess(debug_event.dwProcessId);
+  DebuggeeProcess* process = GetProcess(debug_event.dwProcessId);
 
   if (CREATE_PROCESS_DEBUG_EVENT == debug_event.dwDebugEventCode) {
     process = CreateDebuggeeProcess(debug_event.dwProcessId,
                                     debug_event.u.CreateProcessInfo.hProcess,
-                                    debug_event.u.CreateProcessInfo.hFile);
+                                    debug_event.u.CreateProcessInfo.hFile,
+                                    debug_api_);
     if (NULL != process)
       processes_.push_back(process);
   }
@@ -143,26 +131,43 @@ int ExecutionEngine::OnDebugEvent(const DEBUG_EVENT& debug_event) {
   debug_event_.ToString(tmp, sizeof(tmp));
   DBG_LOG("TR01.01", "msg='ExecutionEngine::OnDebugEvent' event='%s'", tmp);
 
-  if (NULL != process) {
+  if (NULL != process)
     process->OnDebugEvent(&debug_event_);
-    if (process->IsHalted())
-      return process->id();
+
+  if (NULL != halted_process) {
+    *halted_process = NULL;
+    if ((NULL != process) && (DebuggeeProcess::kHalted == process->state()))
+      *halted_process = process;
   }
-  return 0;
 }
 
-void ExecutionEngine::Stop(int wait_ms) {
-  std::for_each(processes_.begin(), processes_.end(), kill_proc);
+bool ExecutionEngine::DoWork(int wait_ms, DebuggeeProcess** halted_process) {
+  if (NULL != halted_process)
+    *halted_process = NULL;
+
+  DEBUG_EVENT de;
+  if (debug_api_.WaitForDebugEvent(&de, wait_ms)) {
+    OnDebugEvent(de, halted_process);
+    return true;
+  }
+  return false;
+}
+
+void ExecutionEngine::Stop() {
+  std::deque<DebuggeeProcess*>::const_iterator it = processes_.begin();
+  while (it != processes_.end()) {
+    DebuggeeProcess* proc = *it;
+    ++it;
+    if (NULL != proc)
+      proc->Kill();
+  }
+  DebuggeeProcess* halted_proc = NULL;
   while (processes_.size() > 0) {
-    int halted_pid = 0;
-    WaitForDebugEventAndDispatchIt(wait_ms, &halted_pid);
-    if (0 != halted_pid) {
-      IDebuggeeProcess* proc = GetProcess(halted_pid);
-      proc->ContinueAndPassExceptionToDebuggee();
-    } else {
-      break;  // Timed-out, stop waiting for processes to shut down.
+    DoWork(20, &halted_proc);
+    if (NULL != halted_proc) {
+      halted_proc->ContinueAndPassExceptionToDebuggee();
+      RemoveDeadProcess();
     }
   }
 }
 }  // namespace debug
-

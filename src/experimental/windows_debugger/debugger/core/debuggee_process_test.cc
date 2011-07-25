@@ -30,7 +30,7 @@ class TestableDebuggeeProcess : public debug::DebuggeeProcess {
   TestableDebuggeeProcess(int id,
                           HANDLE handle,
                           HANDLE file_handle,
-                          debug::DebugAPI* debug_api)
+                          debug::DebugAPI& debug_api)
       : debug::DebuggeeProcess(id,
                                handle,
                                file_handle,
@@ -40,8 +40,6 @@ class TestableDebuggeeProcess : public debug::DebuggeeProcess {
   void OnDebugEvent(debug::DebugEvent* debug_event) {
     debug::DebuggeeProcess::OnDebugEvent(debug_event);
   }
-
-  void Halt() { state_ = kHalted; }
 };
 
 class DebuggeeProcessTest : public ::testing::Test {
@@ -50,7 +48,7 @@ class DebuggeeProcessTest : public ::testing::Test {
     proc_ = new TestableDebuggeeProcess(kFakeProcessId,
                                         kFakeProcessHandle,
                                         kFakeFileHandle,
-                                        &fake_debug_api_);
+                                        fake_debug_api_);
     CreateThread(kFakeThreadId2);
     fake_debug_api_.ClearCallSequence();
   }
@@ -60,31 +58,25 @@ class DebuggeeProcessTest : public ::testing::Test {
   }
 
   void CreateThread(int id) {
-    DEBUG_EVENT wde;
-    memset(&wde, 0, sizeof(wde));
-    wde.dwDebugEventCode = CREATE_THREAD_DEBUG_EVENT;
-    wde.dwProcessId = proc_->id();
-    wde.dwThreadId = id;
-
     debug::DebugEvent de;
-    de.set_windows_debug_event(wde);
+    memset(&de, 0, sizeof(de));
+    de.windows_debug_event_.dwDebugEventCode = CREATE_THREAD_DEBUG_EVENT;
+    de.windows_debug_event_.dwProcessId = proc_->id();
+    de.windows_debug_event_.dwThreadId = id;
     proc_->OnDebugEvent(&de);
     proc_->Continue();
   }
 
   debug::DebugEvent CreateBreakpointDebugEvent(int thread_id, void* addr) {
-    DEBUG_EVENT wde;
-    memset(&wde, 0, sizeof(wde));
-    wde.dwDebugEventCode = EXCEPTION_DEBUG_EVENT;
-    wde.dwProcessId = proc_->id();
-    wde.dwThreadId = thread_id;
-    wde.u.Exception.ExceptionRecord.ExceptionCode =
-        EXCEPTION_BREAKPOINT;
-    wde.u.Exception.ExceptionRecord.ExceptionAddress =
-        addr;
-
     debug::DebugEvent de;
-    de.set_windows_debug_event(wde);
+    memset(&de, 0, sizeof(de));
+    de.windows_debug_event_.dwDebugEventCode = EXCEPTION_DEBUG_EVENT;
+    de.windows_debug_event_.dwProcessId = proc_->id();
+    de.windows_debug_event_.dwThreadId = thread_id;
+    de.windows_debug_event_.u.Exception.ExceptionRecord.ExceptionCode =
+        EXCEPTION_BREAKPOINT;
+    de.windows_debug_event_.u.Exception.ExceptionRecord.ExceptionAddress =
+        addr;
     return de;
   }
 
@@ -98,13 +90,13 @@ TEST_F(DebuggeeProcessTest, SimpleAccessors) {
   EXPECT_EQ(&proc_->debug_api(), &fake_debug_api_);
   EXPECT_EQ(kFakeProcessId, proc_->id());
   EXPECT_EQ(kFakeProcessHandle, proc_->handle());
-  EXPECT_EQ(debug::DebuggeeProcess::kRunning, proc_->state());
+  EXPECT_EQ(debug::DebuggeeProcess::kHalted, proc_->state());
 
   debug::DebugAPI deb_api;
   debug::DebuggeeProcess this_proc(::GetCurrentProcessId(),
                                    ::GetCurrentProcess(),
                                    kFakeFileHandle,
-                                   &deb_api);
+                                   deb_api);
 
   int sz = this_proc.GetWordSizeInBits();
 #ifdef _WIN64
@@ -137,7 +129,6 @@ TEST_F(DebuggeeProcessTest, MemRead) {
 }
 
 TEST_F(DebuggeeProcessTest, MemWrite) {
-  proc_->Halt();
   char buff[10];
   ASSERT_TRUE(proc_->WriteMemory(0, sizeof(buff), buff));
   std::deque<debug::DebugAPIMock::FunctionId> call_list;
@@ -148,12 +139,9 @@ TEST_F(DebuggeeProcessTest, MemWrite) {
 
 TEST_F(DebuggeeProcessTest, Breakpoints) {
   CreateThread(kFakeThreadId);
-  proc_->Halt();
 
   std::deque<debug::Breakpoint*> breakpoints;
   breakpoints.push_back(0);
-  // DebuggeeProcess::GetBreakpoints shall clear 'breakpoints', just
-  // in case something was there.
   proc_->GetBreakpoints(&breakpoints);
   EXPECT_EQ(0, breakpoints.size());
   EXPECT_EQ(kNullBreakpointPtr, proc_->GetBreakpoint(kFakeAddr1));
@@ -187,14 +175,11 @@ TEST_F(DebuggeeProcessTest, ThreadNewAndDelete) {
   ASSERT_EQ(3, threads.size());
   EXPECT_EQ(kFakeThreadId + 77, threads[2]);
 
-  DEBUG_EVENT wde;
-  memset(&wde, 0, sizeof(wde));
-  wde.dwProcessId = proc_->id();
-  wde.dwThreadId = kFakeThreadId2;
-  wde.dwDebugEventCode = EXIT_THREAD_DEBUG_EVENT;
-
   debug::DebugEvent de;
-  de.set_windows_debug_event(wde);
+  memset(&de, 0, sizeof(de));
+  de.windows_debug_event_.dwProcessId = proc_->id();
+  de.windows_debug_event_.dwThreadId = kFakeThreadId2;
+  de.windows_debug_event_.dwDebugEventCode = EXIT_THREAD_DEBUG_EVENT;
   proc_->OnDebugEvent(&de);
   proc_->GetThreadIds(&threads);
   EXPECT_EQ(3, threads.size());
@@ -202,35 +187,20 @@ TEST_F(DebuggeeProcessTest, ThreadNewAndDelete) {
   proc_->Continue();
   proc_->GetThreadIds(&threads);
   EXPECT_EQ(2, threads.size());
-  EXPECT_EQ(debug::DebuggeeProcess::kRunning, proc_->state());
 }
 
 TEST_F(DebuggeeProcessTest, ProcessExit) {
-  DEBUG_EVENT wde;
-  memset(&wde, 0, sizeof(wde));
-  wde.dwDebugEventCode = EXIT_PROCESS_DEBUG_EVENT;
-  wde.dwThreadId = kFakeThreadId2;
-  wde.dwProcessId = proc_->id();
-
   debug::DebugEvent de;
-  de.set_windows_debug_event(wde);
+  memset(&de, 0, sizeof(de));
+  de.windows_debug_event_.dwDebugEventCode = EXIT_PROCESS_DEBUG_EVENT;
+  de.windows_debug_event_.dwProcessId = proc_->id();
 
   proc_->OnDebugEvent(&de);
-  EXPECT_EQ(debug::DebuggeeProcess::kHalted, proc_->state());
-  EXPECT_EQ(wde.dwDebugEventCode,
-            proc_->last_debug_event().windows_debug_event().dwDebugEventCode);
-  EXPECT_EQ(wde.dwProcessId,
-            proc_->last_debug_event().windows_debug_event().dwProcessId);
-  EXPECT_EQ(wde.dwThreadId,
-            proc_->last_debug_event().windows_debug_event().dwThreadId);
-
-  proc_->Continue();
   EXPECT_EQ(debug::DebuggeeProcess::kDead, proc_->state());
 }
 
 TEST_F(DebuggeeProcessTest, HitOurBreakpoint) {
   CreateThread(kFakeThreadId);
-  proc_->Halt();
   EXPECT_TRUE(proc_->SetBreakpoint(kFakeAddr1));
 
   debug::DebugEvent de = CreateBreakpointDebugEvent(kFakeThreadId, kFakeAddr1);
@@ -238,25 +208,10 @@ TEST_F(DebuggeeProcessTest, HitOurBreakpoint) {
 
   EXPECT_EQ(debug::DebuggeeProcess::kHalted, proc_->state());
   EXPECT_EQ(proc_->GetThread(kFakeThreadId), proc_->GetHaltedThread());
-
-  EXPECT_TRUE(proc_->Continue());
-  EXPECT_EQ(debug::DebuggeeProcess::kRunning, proc_->state());
-}
-
-TEST_F(DebuggeeProcessTest, HitBreakpointSingleStep) {
-  debug::DebugEvent de = CreateBreakpointDebugEvent(kFakeThreadId2, kFakeAddr1);
-  proc_->OnDebugEvent(&de);
-
-  EXPECT_EQ(debug::DebuggeeProcess::kHalted, proc_->state());
-  EXPECT_EQ(proc_->GetThread(kFakeThreadId2), proc_->GetHaltedThread());
-
-  EXPECT_TRUE(proc_->SingleStep());
-  EXPECT_EQ(debug::DebuggeeProcess::kRunning, proc_->state());
 }
 
 TEST_F(DebuggeeProcessTest, HitUnknownBreakpoint) {
   CreateThread(kFakeThreadId);
-  proc_->Halt();
   EXPECT_TRUE(proc_->SetBreakpoint(kFakeAddr1));
 
   debug::DebugEvent de = CreateBreakpointDebugEvent(kFakeThreadId, kFakeAddr2);
@@ -264,9 +219,6 @@ TEST_F(DebuggeeProcessTest, HitUnknownBreakpoint) {
 
   EXPECT_EQ(debug::DebuggeeProcess::kHalted, proc_->state());
   EXPECT_EQ(proc_->GetThread(kFakeThreadId), proc_->GetHaltedThread());
-
-  EXPECT_TRUE(proc_->ContinueAndPassExceptionToDebuggee());
-  EXPECT_EQ(debug::DebuggeeProcess::kRunning, proc_->state());
 }
 
 TEST_F(DebuggeeProcessTest, Break) {

@@ -114,20 +114,12 @@ DebugSocket *DebugSocket::CreateServer(const char *addr,
 }
 
 DebugSocket *DebugSocket::CreateClient(const char *addr) {
-  const int kMaxRetries = 20;
-  const int kHalfSecondSleep = 500; // millisconds to sleep
   DebugSocket *client = new DebugSocket();
   client->Construct();
-  int retries_left = kMaxRetries;
-  while (retries_left > 0) {
-    debug_log_info("Connecting to addr %s, retries_left=%d\n",
-                   addr, retries_left);
-    if (DebugSocketConnect(client->GetHandle(), addr) == DSE_OK) {
-      client->SetState(DSS_CONNECTED);
-      return client;
-    }
-    Sleep(kHalfSecondSleep);
-    --retries_left;
+
+  if (DebugSocketConnect(client->GetHandle(), addr) == DSE_OK) {
+    client->SetState(DSS_CONNECTED);
+    return client;
   }
 
   delete client;

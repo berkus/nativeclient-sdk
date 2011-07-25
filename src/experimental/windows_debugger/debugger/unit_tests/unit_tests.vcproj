@@ -333,10 +333,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\core\debug_api_mock2.cc"
-				>
-			</File>
-			<File
 				RelativePath="..\core\debug_breakpoint.cc"
 				>
 			</File>
@@ -399,19 +395,11 @@
 				>
 			</File>
 			<File
-				RelativePath="..\core\debug_api_mock2.h"
-				>
-			</File>
-			<File
 				RelativePath="..\core\debug_breakpoint.h"
 				>
 			</File>
 			<File
 				RelativePath="..\core\debug_event.h"
-				>
-			</File>
-			<File
-				RelativePath="..\core\debug_execution_engine.h"
 				>
 			</File>
 			<File

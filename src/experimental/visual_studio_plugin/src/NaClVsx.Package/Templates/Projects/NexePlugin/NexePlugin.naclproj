@@ -6,12 +6,13 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>$safeprojectname$</RootNamespace>
     <AssemblyName>$safeprojectname$</AssemblyName>
-    <MainFile>NaClMain.c</MainFile>
-	<INCLUDES>-Ic:\src</INCLUDES>
-	<OPT_FLAGS>-O3</OPT_FLAGS>
-	<CFLAGS>-Wall -Wno-long-long -pthread -DXP_UNIX -Werror -g </CFLAGS>
-	<Lib>$(NaClSDKRoot)\toolchain\win_x86\nacl64\lib</Lib>
-    <DebugHost>C:\Program Files (x86)\Google\Google Native Client Support for Visual Studio\sel_ldr64.exe</DebugHost>	
+    <MainFile>NexeMain.cc</MainFile>
+    <INCLUDES>-Ic:\src</INCLUDES>
+    <OPT_FLAGS>-O3</OPT_FLAGS>
+    <CFLAGS>-Wall -Wno-long-long -pthread -DXP_UNIX -Werror -g </CFLAGS>
+    <Lib>$(NaClSDKRoot)\toolchain\win_x86\nacl64\lib</Lib>
+    <LinkLibs>google_nacl_imc;google_nacl_npruntime;pthread;srpc</LinkLibs>
+    <DebugHost>C:\Program Files (x86)\Google\Chrome\Application\chrome.exe</DebugHost>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -25,7 +26,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="NaClMain.c" />
+    <Compile Include="NexeMain.cc" />
+    <Content Include="stub.html" />
   </ItemGroup>
 
 

@@ -19,8 +19,7 @@ class DebugEvent {
  public:
   enum NaClDebugEventCode {
     kNotNaClDebugEvent = 0,
-    kThreadIsAboutToStart = 1,
-    kAppStarted = 2
+    kThreadIsAboutToStart = 1
   };
 
   DebugEvent();

@@ -1,7 +1,7 @@
 // Copyright (c) 2011 The Native Client Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#include "debugger/core/debug_api_mock.h"
+#include "debugger/core/debug_api_mock2.h"
 #include "debugger/core/debug_breakpoint.h"
 #include "debugger/core/debug_event.h"
 #include "debugger/core/debug_execution_engine.h"
@@ -73,7 +73,7 @@ class ExecutionEngineTest : public ::testing::Test {
   }
 
   TestExecutionEngine* exec_eng_;
-  debug::DebugAPIMock fake_debug_api_;
+  debug::DebugAPIMock2 fake_debug_api_;
 };
 
 TEST_F(ExecutionEngineTest, SimpleAccessors) {
@@ -189,21 +189,5 @@ TEST_F(ExecutionEngineTest, GetProcesses) {
 //  exec_eng_->RemoveDeadProcesses();
   EXPECT_EQ(1, exec_eng_->GetProcessesNum());
 }
-
-TEST_F(ExecutionEngineTest, HasAliveDebuggee) {
-  EXPECT_FALSE(exec_eng_->HasAliveDebuggee());
-
-  DEBUG_EVENT de;
-  memset(&de, 0, sizeof(de));
-  de.dwDebugEventCode = CREATE_PROCESS_DEBUG_EVENT;
-  de.dwProcessId = 1;
-  de.dwThreadId = 2;
-  fake_debug_api_.events_.push_back(de);
-
-  int halted_pid = NULL;
-  EXPECT_TRUE(exec_eng_->WaitForDebugEventAndDispatchIt(20, &halted_pid));
-  EXPECT_TRUE(exec_eng_->HasAliveDebuggee());
-}
-
 }  // namespace
 

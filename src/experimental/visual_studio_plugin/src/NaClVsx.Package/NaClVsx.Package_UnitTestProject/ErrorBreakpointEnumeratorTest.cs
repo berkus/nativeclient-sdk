@@ -1,8 +1,6 @@
-﻿// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
-#region
+﻿// Copyright 2010 The Native Client Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can
+// be found in the LICENSE file.
 
 using Google.MsAd7.BaseImpl;
 using Google.MsAd7.BaseImpl.Ad7Enumerators;
@@ -10,18 +8,16 @@ using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Debugger.Interop;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-#endregion
-
 namespace NaClVsx.Package_UnitTestProject {
-  ///<summary>
-  ///  This is a test class for BreakpointErrorEnumTest and is intended
-  ///  to contain all BreakpointErrorEnumTest Unit Tests
+  /// <summary>
+  ///This is a test class for BreakpointErrorEnumTest and is intended
+  ///to contain all BreakpointErrorEnumTest Unit Tests
   ///</summary>
   [TestClass]
   public class ErrorBreakpointEnumeratorTest {
-    ///<summary>
-    ///  Gets or sets the test context which provides
-    ///  information about and functionality for the current test run.
+    /// <summary>
+    ///Gets or sets the test context which provides
+    ///information about and functionality for the current test run.
     ///</summary>
     public TestContext TestContext { get; set; }
 
@@ -57,8 +53,8 @@ namespace NaClVsx.Package_UnitTestProject {
 
     #endregion
 
-    ///<summary>
-    ///  A test for Skip
+    /// <summary>
+    ///A test for Skip
     ///</summary>
     [TestMethod]
     public void SkipTest() {
@@ -79,8 +75,8 @@ namespace NaClVsx.Package_UnitTestProject {
           GetMessageFromBreakpointError(errorPointer[0]));
     }
 
-    ///<summary>
-    ///  A test for Reset
+    /// <summary>
+    ///A test for Reset
     ///</summary>
     [TestMethod]
     public void ResetTest() {
@@ -102,14 +98,13 @@ namespace NaClVsx.Package_UnitTestProject {
           GetMessageFromBreakpointError(errors[0]), GetIntMessage(0));
     }
 
-    ///<summary>
-    ///  A test for PopulateBreakpoint
+    /// <summary>
+    ///A test for PopulateBreakpoint
     ///</summary>
     [TestMethod]
     public void PopulateBreakpointTest() {
       var target = new ErrorBreakpointEnumerator();
-      var breakpoint =
-          NaClPackageTestUtils.GetPendingBreakpoint();
+      PendingBreakpoint breakpoint = GetPendingBreakpoint();
       // If PopulateBreakpoint works for a few entries it should work for any number
       const int kSampleSize = 3;
       uint returnedCount = 0;
@@ -121,7 +116,7 @@ namespace NaClVsx.Package_UnitTestProject {
       Assert.AreEqual(
           target.Next(kSampleSize, breakpointErrors, ref returnedCount),
           VSConstants.S_OK);
-      for (var i = 0; i < kSampleSize; ++i) {
+      for (int i = 0; i < kSampleSize; ++i) {
         Assert.AreNotEqual(
             breakpointErrors[i].GetPendingBreakpoint(out returnedBreakpoint),
             VSConstants.S_OK);
@@ -133,7 +128,7 @@ namespace NaClVsx.Package_UnitTestProject {
       Assert.AreEqual(
           target.Next(kSampleSize, breakpointErrors, ref returnedCount),
           VSConstants.S_OK);
-      for (var i = 0; i < kSampleSize; ++i) {
+      for (int i = 0; i < kSampleSize; ++i) {
         Assert.AreEqual(
             breakpointErrors[i].GetPendingBreakpoint(out returnedBreakpoint),
             VSConstants.S_OK);
@@ -141,8 +136,8 @@ namespace NaClVsx.Package_UnitTestProject {
       }
     }
 
-    ///<summary>
-    ///  A test for Next
+    /// <summary>
+    ///A test for Next
     ///</summary>
     [TestMethod]
     public void NextTest() {
@@ -159,8 +154,8 @@ namespace NaClVsx.Package_UnitTestProject {
           target.Next(kArraySize, errors, ref count), VSConstants.S_OK);
       Assert.IsTrue(count == kArraySize);
       // Make sure the right errors are in the array);
-      for (var i = 0; i < kArraySize; ++i) {
-        var expectedMessage = GetIntMessage(i);
+      for (int i = 0; i < kArraySize; ++i) {
+        string expectedMessage = GetIntMessage(i);
         Assert.AreEqual(
             expectedMessage, GetMessageFromBreakpointError(errors[i]));
       }
@@ -172,8 +167,8 @@ namespace NaClVsx.Package_UnitTestProject {
     }
 
 
-    ///<summary>
-    ///  A test for Insert
+    /// <summary>
+    ///A test for Insert
     ///</summary>
     [TestMethod]
     public void InsertTest() {
@@ -193,8 +188,8 @@ namespace NaClVsx.Package_UnitTestProject {
       Assert.IsTrue(count == 1001);
     }
 
-    ///<summary>
-    ///  A test for GetCount
+    /// <summary>
+    ///A test for GetCount
     ///</summary>
     [TestMethod]
     public void GetCountTest() {
@@ -206,8 +201,8 @@ namespace NaClVsx.Package_UnitTestProject {
       Assert.IsTrue(count == 13233);
     }
 
-    ///<summary>
-    ///  A test for Clone
+    /// <summary>
+    ///A test for Clone
     ///</summary>
     [TestMethod]
     public void CloneTest() {
@@ -253,6 +248,15 @@ namespace NaClVsx.Package_UnitTestProject {
               enum_BPERESI_FIELDS.BPERESI_MESSAGE, resolutionInfo),
           VSConstants.S_OK);
       return resolutionInfo[0].bstrMessage;
+    }
+
+    private static PendingBreakpoint GetPendingBreakpoint() {
+      var sdbMock = new SimpleDebuggerMock();
+      var requestMock = new BreakpointRequestMock();
+      var request = new BreakpointRequest(requestMock);
+
+      // The instance to test.
+      return new PendingBreakpoint(sdbMock, request);
     }
 
     private static void PopulateErrorEnum(ErrorBreakpointEnumerator target,

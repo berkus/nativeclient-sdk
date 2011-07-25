@@ -26,22 +26,30 @@ found in the LICENSE file.
     }
 
     function toggleSound(flag) {
-      sineSynth.postMessage('setFrequency:' +
-          document.getElementById('frequency_field').value);
-      if (flag) {
-        sineSynth.postMessage('playSound');
-      } else {
-        sineSynth.postMessage('stopSound');
+      try {
+        sineSynth.postMessage('setFrequency:' +
+            document.getElementById('frequency_field').value);
+        if (flag) {
+          sineSynth.postMessage('playSound');
+        } else {
+          sineSynth.postMessage('stopSound');
+        }
+      } catch(e) {
+        alert(e.message);
       }
     }
 
     function changeFrequency(freq) {
-      sineSynth.postMessage('setFrequency:' + freq);
+      try {
+        sineSynth.postMessage('setFrequency:' + freq);
+      } catch(e) {
+        alert(e.message);
+      }
     }
   </script>
 </head>
 
-<body id="bodyId">
+<body id="bodyId" onunload="pageDidUnload()">
   <h1>Sine Wave Synthesizer</h1>
   <p>Click the button to start and stop the sine wave playing.</p>
   <button onclick="toggleSound(true)">Play</button>

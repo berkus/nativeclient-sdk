@@ -4,13 +4,13 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/ppb.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_messaging.h"
-#include "ppapi/c/ppb_var.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/ppp_messaging.h"
@@ -24,7 +24,7 @@
 
 static PP_Module module_id = 0;
 static struct PPB_Messaging* messaging_interface = NULL;
-static struct PPB_Var* var_interface = NULL;
+static struct PPB_Var_Deprecated* var_interface = NULL;
 
 /**
  * Returns a mutable C string contained in the @a var or NULL if @a var is not
@@ -151,6 +151,32 @@ static void Instance_DidChangeFocus(PP_Instance instance,
 }
 
 /**
+ * General handler for input events. Returns true if the event was handled or
+ * false if it was not.
+ *
+ * If the event was handled, it will not be forwarded to the web page or
+ * browser. If it was not handled, it will bubble according to the normal
+ * rules. So it is important that the NaCl module respond accurately with
+ * whether event propagation should continue.
+ *
+ * Event propagation also controls focus. If you handle an event like a mouse
+ * event, typically your NaCl module will be given focus. Returning false means
+ * that the click will be given to a lower part of the page and your NaCl
+ * module will not receive focus. This allows a plugin to be partially
+ * transparent, where clicks on the transparent areas will behave like clicks
+ * to the underlying page.
+ * @param[in] instance The identifier of the instance representing this NaCl
+ *     module.
+ * @param[in] event The event.
+ * @return PP_TRUE if @a event was handled, PP_FALSE otherwise.
+ */
+static PP_Bool Instance_HandleInputEvent(PP_Instance instance,
+                                         const struct PP_InputEvent* event) {
+  /* We don't handle any events. */
+  return PP_FALSE;
+}
+
+/**
  * Handler that gets called after a full-frame module is instantiated based on
  * registered MIME types.  This function is not called on NaCl modules.  This
  * function is essentially a place-holder for the required function pointer in
@@ -166,6 +192,15 @@ static PP_Bool Instance_HandleDocumentLoad(PP_Instance instance,
   return PP_FALSE;
 }
 
+/**
+ * Create scriptable object for the given instance.  This style of scripting
+ * has been deprecated, so this routine always returns an undefined object.
+ * @param[in] instance The instance ID.
+ * @return A scriptable object, always an undefined object.
+ */
+static struct PP_Var Instance_GetInstanceObject(PP_Instance instance) {
+  return PP_MakeUndefined();
+}
 
 /**
  * Handler for messages coming in from the browser via postMessage.  The
@@ -196,7 +231,9 @@ void Messaging_HandleMessage(PP_Instance instance, struct PP_Var var_message) {
 PP_EXPORT int32_t PPP_InitializeModule(PP_Module a_module_id,
                                        PPB_GetInterface get_browser_interface) {
   module_id = a_module_id;
-  var_interface = (struct PPB_Var*)(get_browser_interface(PPB_VAR_INTERFACE));
+  var_interface =
+      (struct PPB_Var_Deprecated*)(get_browser_interface(
+          PPB_VAR_DEPRECATED_INTERFACE));
   messaging_interface =
       (struct PPB_Messaging*)(get_browser_interface(PPB_MESSAGING_INTERFACE));
   return PP_OK;
@@ -215,7 +252,9 @@ PP_EXPORT const void* PPP_GetInterface(const char* interface_name) {
       &Instance_DidDestroy,
       &Instance_DidChangeView,
       &Instance_DidChangeFocus,
-      &Instance_HandleDocumentLoad
+      &Instance_HandleInputEvent,
+      &Instance_HandleDocumentLoad,
+      &Instance_GetInstanceObject
     };
     return &instance_interface;
   } else if (strcmp(interface_name, PPP_MESSAGING_INTERFACE) == 0) {

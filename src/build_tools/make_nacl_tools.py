@@ -16,15 +16,39 @@ import tempfile
 bot = build_utils.BotAnnotator()
 
 
+def MakeCheckoutDirs(options):
+  script_dir = os.path.abspath(os.path.dirname(__file__))
+  # Pick work directory.
+  options.work_dir = os.path.join(script_dir, 'packages', 'native_client');
+  if not os.path.exists(options.work_dir):
+    os.makedirs(options.work_dir)
+
 def MakeInstallDirs(options):
   install_dir = os.path.join(options.toolchain, 'bin');
   if not os.path.exists(install_dir):
     os.makedirs(install_dir)
 
+def Checkout(options):
+  if not os.path.exists(os.path.join(options.work_dir, '.gclient')):
+    # Setup client spec.
+    subprocess.check_call(
+        'gclient config '
+        'http://src.chromium.org/native_client/trunk/src/native_client',
+        cwd=options.work_dir,
+        shell=True)
+  else:
+    bot.Print(".gclient found, using existing configuration.")
+  # Sync at the desired revision.
+  subprocess.check_call(
+      'gclient sync --rev %s' % options.revision,
+      cwd=options.work_dir,
+      shell=True)
+
 
 def Build(options):
   '''Build 32-bit and 64-bit versions of both sel_ldr and ncval'''
-  nacl_dir = os.path.join(options.nacl_dir, 'native_client')
+  # TODO(dspringer): Remove nacl_dir when the --nacl-dir option is added.
+  nacl_dir = os.path.join(options.work_dir, 'native_client')
   if sys.platform == 'win32':
     scons = os.path.join(nacl_dir, 'scons.bat')
     bits32 = 'vcvarsall.bat x86 && '
@@ -34,33 +58,24 @@ def Build(options):
     bits32 = ''
     bits64 = ''
 
-  def BuildTools(prefix, bits, target):
+  def build_step(prefix, bits, target):
     cmd = '%s%s -j %s --mode=%s platform=x86-%s naclsdk_validate=0 %s' % (
         prefix, scons, options.jobs, options.variant, bits, target)
-    bot.Run(cmd, shell=True, cwd=nacl_dir)
+    bot.Print('Running "%s"' % cmd)
+    subprocess.check_call(cmd, shell=True, cwd=nacl_dir)
 
-  BuildTools(bits32, '32', 'sdl=none sel_ldr ncval')
-  BuildTools(bits64, '64', 'sdl=none sel_ldr ncval')
-
-  def BuildAndInstallLibsAndHeaders(bits):
-    cmd = '%s install --mode=nacl libdir=%s includedir=%s platform=x86-%s' % (
-        scons,
-        os.path.join(options.toolchain,
-                     'x86_64-nacl',
-                     'lib32' if bits == 32 else 'lib'),
-        os.path.join(options.toolchain, 'x86_64-nacl', 'include'),
-        bits)
-    bot.Run(cmd, shell=True, cwd=nacl_dir)
-
-  BuildAndInstallLibsAndHeaders(32)
-  BuildAndInstallLibsAndHeaders(64)
+  build_step(bits32, '32', 'sdl=none sel_ldr')
+  build_step(bits64, '64', 'sdl=none sel_ldr')
+  build_step(bits32, '32', 'ncval')
+  build_step(bits64, '64', 'ncval')
 
 
 def Install(options, tools):
   # Figure out where tools are and install the build artifacts into the
   # SDK tarball staging area.
   # TODO(bradnelson): add an 'install' alias to the main build for this.
-  nacl_dir = os.path.join(options.nacl_dir, 'native_client')
+  # TODO(dspringer): Remove nacl_dir when the --nacl-dir option is added.
+  nacl_dir = os.path.join(options.work_dir, 'native_client')
   tool_build_path_32 = os.path.join(nacl_dir,
                                     'scons-out',
                                     '%s-x86-32' % (options.variant),
@@ -82,27 +97,26 @@ def Install(options, tools):
                              'bin',
                              'nacl64-%s%s' % (nacl_tool, options.exe_suffix)))
 
-
 #Cleans up the checkout directories if -c was provided as a command line arg.
 def CleanUpCheckoutDirs(options):
   if(options.cleanup):
-    bot.Print('Removing scons-out')
-    scons_out = os.path.join(options.nacl_dir, 'native_client', 'scons-out')
     if sys.platform != 'win32':
-      shutil.rmtree(scons_out, ignore_errors=True)
+      shutil.rmtree(options.work_dir, ignore_errors=True)
     else:
       # Intentionally ignore return value since a directory might be in use.
-      subprocess.call(['rmdir', '/Q', '/S', scons_out],
+      subprocess.call(['rmdir', '/Q', '/S', options.work_dir],
                       env=os.environ.copy(),
                       shell=True)
 
-
 def BuildNaClTools(options):
-  bot.BuildStep('build NaCl tools')
-  CleanUpCheckoutDirs(options)
+  bot.BuildStep('checkout NaCl tools')
+  MakeCheckoutDirs(options)
   MakeInstallDirs(options)
+  Checkout(options)
+  bot.BuildStep('build NaCl tools')
   Build(options)
   Install(options, ['sel_ldr', 'ncval'])
+  CleanUpCheckoutDirs(options)
   return 0
 
 
@@ -112,9 +126,11 @@ def main(argv):
   else:
     exe_suffix = ''
 
-  script_dir = os.path.abspath(os.path.dirname(__file__))
-
   parser = optparse.OptionParser()
+  parser.add_option(
+      '-r', '--revision', dest='revision',
+      default='HEAD',
+      help='which revision of native_client to sync')
   parser.add_option(
       '-t', '--toolchain', dest='toolchain',
       default='toolchain',
@@ -126,14 +142,10 @@ def main(argv):
   parser.add_option(
       '-j', '--jobs', dest='jobs', default='1',
       help='Number of parallel jobs to use while building nacl tools')
-  parser.add_option(
-      '-n', '--nacl_dir', dest='nacl_dir',
-      default=os.path.join(script_dir, 'packages', 'native_client'),
-      help='Location of Native Client repository used for building tools')
   (options, args) = parser.parse_args(argv)
   if args:
     parser.print_help()
-    bot.Print('ERROR: invalid argument(s): %s' % args)
+    bot.Print('ERROR: invalid argument')
     sys.exit(1)
 
   options.toolchain = os.path.abspath(options.toolchain)

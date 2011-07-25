@@ -9,9 +9,7 @@
 #include "debugger/core/debug_logger.h"
 #include "debugger/base/debug_utils.h"
 #include "debugger/base/debug_blob.h"
-#include "debugger/base/debug_command_line.h"
 
-#include "debugger/base/debug_utils.h"
 #include "debug_debug_event2.h"
 
 #pragma warning(disable : 4996)
@@ -41,10 +39,10 @@ const char* GetDebugeeStateName(debug::DebuggeeProcess::State st) {
 
 class MyExecutionEngine : public debug::ExecutionEngine {
  public:
-  MyExecutionEngine(debug::DebugAPI* debug_api) : debug::ExecutionEngine(debug_api) {}
+  MyExecutionEngine(debug::DebugAPI& debug_api) : debug::ExecutionEngine(debug_api) {}
 
  protected:
-  virtual int OnDebugEvent(const DEBUG_EVENT& debug_event);
+  virtual void OnDebugEvent(const DEBUG_EVENT& debug_event, debug::DebuggeeProcess** halted_process);
 };
 
 bool print_all_deb_events = true;
@@ -57,68 +55,52 @@ int main(int argc, char* argv[]) {
   debug::Logger::SetGlobalLogger(&log);
   debug::DebugAPI debug_api;
 
-  MyExecutionEngine dbg_core(&debug_api);
+  MyExecutionEngine dbg_core(debug_api);
   debug::StandardContinuePolicy continue_policy;
 
-// test only! it works!
-//  HMODULE hLib = ::LoadLibrary("D:\\chromuim_648_12\\src\\build\\Debug\\nacl64.exe");
-//  FARPROC fp = ::GetProcAddress(hLib, "SetNumberOfExtensions");
-
 #ifdef _WIN64
-//  const char* cmd = "D:\\chromuim_648_12\\src\\build\\Debug\\chrome.exe"; // --no-sandbox";
-//  const char* work_dir = NULL; //"D:\\chromuim_648_12\\src\\build\\Debug";
+  const char* cmd = "D:\\chromuim_648_12\\src\\build\\Debug\\chrome.exe"; // --no-sandbox";
+//  cmd = "D:\\src\\nacl-sdk\\src\\debugger\\aa\\Debug\\aa.exe";
+
+  const char* work_dir = NULL; //"D:\\chromuim_648_12\\src\\build\\Debug";
+  //D:\chromuim_648_12\src\build\Debug\chrome.exe
 #else
-//  const char* cmd = "C:\\work\\chromuim_648_12\\src\\build\\Debug\\chrome.exe";
-//  const char* work_dir = NULL; //"C:\\work\\chromuim_648_12\\src\\build\\Debug";
+  const char* cmd = "C:\\work\\chromuim_648_12\\src\\build\\Debug\\chrome.exe";
+  const char* work_dir = NULL; //"C:\\work\\chromuim_648_12\\src\\build\\Debug";
 #endif
 
-  debug::CommandLine cmd(argc - 1, argv + 1);
-  std::string cmd_line = cmd.ToString();
-
-  bool start_res = dbg_core.StartProcess(cmd_line.c_str(), NULL);
+  bool start_res = dbg_core.StartProcess(cmd, work_dir);
   if (!start_res) {
-    printf("Can't start [%s] in [%s].\n", cmd_line.c_str(), NULL);
+    printf("Can't start [%s] in [%s].\n", cmd, work_dir);
   } else {
     DBG_LOG("TR51.00", "msg='Debug session started'");
-    DBG_LOG("TR51.01", "msg='Process started' cmd='%s'", cmd_line.c_str());
+    DBG_LOG("TR51.01", "msg='Process started' cmd='%s'", cmd);
 
 //    int current_process = 0;
 //    int current_thread = 0;
     do {
-      int pid = 0;
-      bool dbg_event = dbg_core.WaitForDebugEventAndDispatchIt(0, &pid); 
-      debug::IDebuggeeProcess* halted_process = dbg_core.GetProcess(pid);
-  
+      debug::DebuggeeProcess* halted_process = NULL;
+      time_t t1 = time(0);
+      bool dbg_event = dbg_core.DoWork(0, &halted_process); 
+
       if (NULL != halted_process) {
+        //ins_observer.OnDebugEvent(dbg_core.debug_event().windows_debug_event_);
         debug::DecisionToContinue dtc;
         continue_policy.MakeContinueDecision(dbg_core.debug_event(), 
                                              halted_process->GetHaltedThread(),
                                              &dtc);
         //dtc.halt_debuggee_ = true;
-        int nacl_event_id = dbg_core.debug_event().nacl_debug_event_code();
+        int nacl_event_id = dbg_core.debug_event().nacl_debug_event_code_;
         if (debug::DebugEvent::kNotNaClDebugEvent != nacl_event_id) {
           DBG_LOG("TR51.02", "DebugEvent::nacl_debug_event_code_ = %d", nacl_event_id);
         }
 
-        DBG_LOG("TR51.03", "msg=DecisionToContinue continue=%s pass_exception=%s",
+        time_t t2 = time(0);
+        DBG_LOG("TR51.03", "msg=DecisionToContinue continue=%s pass_exception=%s dt='%d secs'",
                 dtc.IsHaltDecision() ? "no" : "yes",
-                dtc.pass_exception_to_debuggee() ? "yes" : "no");
+                dtc.pass_exception_to_debuggee() ? "yes" : "no",
+                (int)(t2 - t1));
 
-#ifdef Z00
-        if (0 && (dbg_core.debug_event().windows_debug_event().dwDebugEventCode == EXCEPTION_DEBUG_EVENT)) {
-          if (dbg_core.debug_event().windows_debug_event().u.Exception.ExceptionRecord.ExceptionCode == EXCEPTION_BREAKPOINT) {
-            dtc.halt_debuggee_ = true;
-            dtc.decision_strength_ = debug::DecisionToContinue::kStrongDecision;
-            printf("Breakpoint hit\n");
-          }
-        }
-
-        if (dbg_core.debug_event().windows_debug_event().dwDebugEventCode == EXIT_THREAD_DEBUG_EVENT) {
-          dtc.halt_debuggee_ = true;
-          dtc.decision_strength_ = debug::DecisionToContinue::kStrongDecision;
-            printf("Thread exiting\n");
-        }
-#endif
         if (!dtc.IsHaltDecision()) {
           if (dtc.pass_exception_to_debuggee())
             halted_process->ContinueAndPassExceptionToDebuggee();
@@ -137,13 +119,13 @@ int main(int argc, char* argv[]) {
         gets(cmd);
         DBG_LOG("TR51.04", "user_command='%s'", cmd);
         if (0 == strcmp(cmd, "quit")) {
-          dbg_core.Stop(300);
+          dbg_core.Stop();
           break;
         }
 
         if (0 == strncmp(cmd, "break", 5)) {
           int pid = sscanf(cmd + strlen("break"), "%d", &pid);
-          debug::IDebuggeeProcess* proc = dbg_core.GetProcess(pid);
+          debug::DebuggeeProcess* proc = dbg_core.GetProcess(pid);
           if (NULL != proc)
             proc->Break();
         } else if (0 == strncmp(cmd, "e-", 2)) {
@@ -161,7 +143,7 @@ int main(int argc, char* argv[]) {
           gets(cmd);
           DBG_LOG("TR51.05", "user_command='%s'", cmd);
           if (0 == strcmp(cmd, "quit")) {
-            dbg_core.Stop(300);
+            dbg_core.Stop();
             break;
           } else if (0 == strncmp(cmd, "e-", 2)) {
             print_all_deb_events = false;
@@ -185,10 +167,10 @@ int main(int argc, char* argv[]) {
             continue;
           } else if (0 == strcmp(cmd, "info threads")) {
             std::deque<int> processes;
-            dbg_core.GetProcessIds(&processes);
+            dbg_core.GetProcessesIds(&processes);
             for (size_t p = 0; p < processes.size(); p++) {
               int pid = processes[p];
-              debug::DebuggeeProcess* proc = static_cast<debug::DebuggeeProcess*>(dbg_core.GetProcess(pid));
+              debug::DebuggeeProcess* proc = dbg_core.GetProcess(pid);
               if (proc == halted_process)
                 printf("process * %d", pid);
               else
@@ -214,7 +196,7 @@ int main(int argc, char* argv[]) {
                   debug::DebuggeeThread* thr = proc->GetThread(id);
                   bool current = (thr == thread);
                   const char* status = thr->GetStateName(thr->state());
-                  const char* is_nexe = thr->IsNaClAppThread() ? "[I'm nexe thread]" : "";
+                  const char* is_nexe = thr->is_nexe() ? "[I'm nexe thread]" : "";
                   printf("   %s%d ""ip=%p %s %s\n",
                       current ? "*" : " ",
                       id,
@@ -226,7 +208,6 @@ int main(int argc, char* argv[]) {
           } else if (0 == strcmp(cmd, "c")) {
             if (NULL != halted_process)
               halted_process->Continue();
-            break;
           } else if (0 == strncmp(cmd, "ct", 2)) {
             if (NULL != thread) {
               CONTEXT ct;
@@ -274,6 +255,7 @@ int main(int argc, char* argv[]) {
             }
             continue;
           }
+          break;
         }
       }
     } while(true);
@@ -299,15 +281,15 @@ unsigned char* my_strstr(unsigned char* str, size_t str_length, unsigned char* s
 
 bool FindNexeThread(debug::ExecutionEngine& dbg_core, int* pid, int* tid) {
   std::deque<int> processes;
-  dbg_core.GetProcessIds(&processes);
+  dbg_core.GetProcessesIds(&processes);
   for (size_t p = 0; p < processes.size(); p++) {
-    debug::IDebuggeeProcess* proc = dbg_core.GetProcess(processes[p]);
+    debug::DebuggeeProcess* proc = dbg_core.GetProcess(processes[p]);
     if (NULL != proc) {
       std::deque<int> threads;
       proc->GetThreadIds(&threads);
       for (size_t i = 0; i < threads.size(); i++) {
         debug::DebuggeeThread* thr = proc->GetThread(threads[i]);
-        if (thr && thr->IsNaClAppThread()) {
+        if (thr && thr->is_nexe()) {
           *pid = processes[p];
           *tid = threads[i];
           return false;
@@ -318,47 +300,19 @@ bool FindNexeThread(debug::ExecutionEngine& dbg_core, int* pid, int* tid) {
   return false;
 }
 
-int MyExecutionEngine::OnDebugEvent(const DEBUG_EVENT& debug_event) {
-  if (print_all_deb_events) {
+void MyExecutionEngine::OnDebugEvent(const DEBUG_EVENT& debug_event, debug::DebuggeeProcess** halted_process) {
+  bool nexe = false;
+  debug::DebuggeeThread* thread = NULL;
+  if (NULL != *halted_process)
+    thread = (*halted_process)->GetHaltedThread();
+  if (NULL != thread)
+    nexe = thread->is_nexe();
+
+  if (print_all_deb_events || nexe) {
     std::string text;
     debug::DEBUG_EVENT_ToJSON(debug_event, &text);
     DBG_LOG("TR51.06", "debug_event=%s", text.c_str());
-
-    if (CREATE_PROCESS_DEBUG_EVENT == debug_event.dwDebugEventCode) {
-      std::string cmd_line;
-      debug::Utils::GetProcessCmdLine(debug_event.u.CreateProcessInfo.hProcess, &cmd_line);
-      DBG_LOG("TR51.09", "cmd_line='%s'", cmd_line.c_str());
-    } else if (LOAD_DLL_DEBUG_EVENT == debug_event.dwDebugEventCode) {
-      debug::DebuggeeProcess* proc = static_cast<debug::DebuggeeProcess*>(GetProcess(debug_event.dwProcessId));
-      if (proc) {
-        std::string path;
-        bool r = debug::Utils::ReadUnucodeStr(proc->handle(), debug_event.u.LoadDll.lpImageName, &path);
-        DBG_LOG("TR51.10", "LOAD_DLL='%s'", path.c_str());
-      }
-    }
   }
 
-  debug::IDebuggeeProcess* proc = GetProcess(debug_event.dwProcessId);
-  if (proc) {
-    debug::DebuggeeThread* thread = proc->GetThread(debug_event.dwThreadId);
-    if (thread) {
-      void* ip = thread->GetIP();
-      DBG_LOG("TR51.07", "debug_event_ip' ip=0x%p pid=%d tid=%d",
-              ip,
-              debug_event.dwProcessId,
-              debug_event.dwThreadId);
-    }
-  }
-
-  int pid = ExecutionEngine::OnDebugEvent(debug_event);
-
-  proc = GetProcess(debug_event.dwProcessId);
-  if (proc) {
-    DBG_LOG("TR51.08", "debug_event_end WoW=%s pid=%d tid=%d",  
-            proc->IsWoW() ? "yes" : "no",
-            debug_event.dwProcessId,
-            debug_event.dwThreadId);
-  }
-  return pid;
+  ExecutionEngine::OnDebugEvent(debug_event, halted_process);
 }
-

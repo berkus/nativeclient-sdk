@@ -21,7 +21,7 @@ import sys
 
 # Revision numbers for the SDK
 MAJOR_REV = '0'
-MINOR_REV = '5'
+MINOR_REV = '4'
 
 # Map the string stored in |sys.platform| into a toolchain platform specifier.
 PLATFORM_MAPPING = {
@@ -30,6 +30,7 @@ PLATFORM_MAPPING = {
     'linux': 'linux_x86',
     'linux2': 'linux_x86',
     'darwin': 'mac_x86',
+    'macos': 'mac_x86',
 }
 
 TOOLCHAIN_AUTODETECT = "AUTODETECT"
@@ -122,6 +123,30 @@ def CheckPatchVersion(shell_env=None):
     print "or version 2.6.1 (or later)."
     return False
   return True
+
+
+def GetDepsValues(deps_loc):
+  """Returns a dict that contains all the variables defined in the DEPS file"""
+  local_scope = { }
+
+  # This is roughly taken from depot_tools/gclient.py, with unneeded functions
+  # stubbed out.
+  global_scope = {
+    'File': lambda: '--File() Not Implemented--',
+    'From': lambda: '--From() Not Implemented--',
+    'Var': lambda var: 'Var(%s)' % var,
+    'deps_os': {},
+  }
+
+  # This loads the contents from the DEPS file into the local_scope dict
+  execfile(deps_loc, global_scope, local_scope)
+
+  return local_scope
+
+
+def GetNaClRevision(deps_loc):
+  """Returns the Subversion Revision of the NaCL Repository"""
+  return GetDepsValues(deps_loc)['NACL_REVISION']
 
 
 # Build a toolchain path based on the platform type.  |base_dir| is the root
@@ -217,22 +242,15 @@ class BotAnnotator:
     returns:
       a string containing the command output
     '''
-    if 'stdout' in kwargs or 'stderr' in kwargs:
-      raise ValueError('stdout or stderr argument not allowed.')
+    if 'stdout' in kwargs:
+      raise ValueError('stdout argument not allowed, it will be overridden.')
     command = kwargs.get("args")
     if command is None:
       command = popenargs[0]
     self.Print('Running %s' % command)
-    process = subprocess.Popen(stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE,
-                               *popenargs,
-                               **kwargs)
-    output, error_output = process.communicate()
-    if error_output:
-      self.Print("%s\nStdErr for %s:\n%s" % (output, command, error_output))
-    else:
-      self.Print(output)
-
+    process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+    output, unused_err = process.communicate()
+    self.Print(output)
     retcode = process.poll() # Note - calling wait() can cause a deadlock
     if retcode != 0:
       raise subprocess.CalledProcessError(retcode, command)

@@ -1,18 +1,17 @@
-﻿// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
-#region
-
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using Google.MsAd7.BaseImpl.Interfaces;
 using NaClVsx;
 using NaClVsx.DebugHelpers;
 
-#endregion
-
-namespace Google.NaClVsx.DebugSupport.DWARF {
-  class VirtualMachineInputs : IDwarfVM {
-    public VirtualMachineInputs(ISimpleDebugger dbg, ulong frameBase) {
+namespace Google.NaClVsx.DebugSupport.DWARF
+{
+  class VirtualMachineInputs : IDwarfVM
+  {
+    public VirtualMachineInputs(NaClDebugger dbg, ulong frameBase) {
       dbg_ = dbg;
       frameBase_ = frameBase;
     }
@@ -51,9 +50,10 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
     public ulong ReadMemory(ulong address, int count) {
       ulong result = 0;
       if (dbg_ != null) {
+
         // line below from Ian's RSP branch
         result = dbg_.GetU64(address + dbg_.BaseAddress);
-
+        
         // this is what the code originally was.  
         //result = dbg_.GetU64(address);
         // FIXME -- clean this up...but I am not hitting this
@@ -70,16 +70,11 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
 
     #endregion
 
-    #region Private Implementation
-
-    private readonly ISimpleDebugger dbg_;
-
     private uint bitWidth_ = 64;
-    ulong frameBase_;
     private bool isLsb_ = true;
     private string msg_ = "OK";
-    private RegsX86_64 registers_;
-
-    #endregion
+    private readonly NaClDebugger dbg_;
+    ulong frameBase_;
+    private RegsX86_64 registers_ = null;
   }
 }

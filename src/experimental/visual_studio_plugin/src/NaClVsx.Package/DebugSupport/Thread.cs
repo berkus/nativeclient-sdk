@@ -1,42 +1,34 @@
-﻿// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
-#region
-
+﻿// Copyright 2009 The Native Client Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can
+// be found in the LICENSE file.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Google.MsAd7.BaseImpl;
 using Google.MsAd7.BaseImpl.Ad7Enumerators;
 using Google.MsAd7.BaseImpl.DebugProperties;
+using Google.MsAd7.BaseImpl.Interfaces.SimpleSymbolTypes;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Debugger.Interop;
 using NaClVsx.DebugHelpers;
 using StackFrame = Google.MsAd7.BaseImpl.StackFrame;
 
-#endregion
-
 namespace Google.NaClVsx.DebugSupport {
+
+
   public class Thread : IDebugThread2 {
     public Thread(ProgramNode program, string name, uint tid) {
       name_ = name;
       tid_ = tid;
       program_ = program;
+
     }
 
     #region Implementation of IDebugThread2
 
-    public List<StackFrame> GetStack() {
-      return stack_;
-    }
-
-    /// <summary>
-    ///   Called by the Visual Studio Debugger to retrieve the stack frames for
-    ///   this thread.  On halt, this will be called on each thread.  Detailed
-    ///   information about the arguments and required usage can be found on
-    ///   msdn.
-    /// </summary>
     public int EnumFrameInfo(enum_FRAMEINFO_FLAGS dwFieldSpec,
                              uint nRadix,
                              out IEnumDebugFrameInfo2 ppEnum) {
@@ -44,10 +36,10 @@ namespace Google.NaClVsx.DebugSupport {
 
       RefreshFrameInfo(stack_);
 
-      var frames = new List<FRAMEINFO>(stack_.Count);
-      var fi = new FRAMEINFO[1];
+      List<FRAMEINFO> frames = new List<FRAMEINFO>(stack_.Count);
+      FRAMEINFO[] fi = new FRAMEINFO[1];
 
-      foreach (var stackFrame in stack_) {
+      foreach (StackFrame stackFrame in stack_) {
         stackFrame.GetInfo(dwFieldSpec, nRadix, fi);
         frames.Add(fi[0]);
       }
@@ -104,29 +96,34 @@ namespace Google.NaClVsx.DebugSupport {
       Debug.WriteLine("Thread.Resume");
       throw new NotImplementedException();
     }
+    public List<StackFrame> GetStack() {
+      return stack_; 
+    }
 
     public int GetThreadProperties(enum_THREADPROPERTY_FIELDS dwFields,
                                    THREADPROPERTIES[] ptp) {
       Debug.WriteLine("Thread.GetThreadProperties");
-      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_ID)) {
+      if(dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_ID)) {
         ptp[0].dwThreadId = tid_;
       }
-      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_NAME)) {
+      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_NAME))
+      {
         ptp[0].bstrName = name_;
       }
 
       // The following properties are currently bogus.
       //
-      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_LOCATION)) {
+      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_LOCATION))
+      {
         ptp[0].bstrLocation = "THREADPROPERTY: Location";
       }
-      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_PRIORITY)) {
+      if(dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_PRIORITY)) {
         ptp[0].bstrPriority = "THREADPROPERTY: Priority";
       }
-      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_STATE)) {
-        ptp[0].dwThreadState = (uint) enum_THREADSTATE.THREADSTATE_STOPPED;
+      if(dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_STATE)) {
+        ptp[0].dwThreadState = (uint)enum_THREADSTATE.THREADSTATE_STOPPED;
       }
-      if (dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_SUSPENDCOUNT)) {
+      if(dwFields.HasFlag(enum_THREADPROPERTY_FIELDS.TPF_SUSPENDCOUNT)) {
         ptp[0].dwSuspendCount = 1;
       }
 
@@ -143,50 +140,45 @@ namespace Google.NaClVsx.DebugSupport {
 
     #endregion
 
-    #region Private Implementation
-
-    private readonly ProgramNode program_;
-
-    private readonly List<StackFrame> stack_ = new List<StackFrame>();
-    private readonly uint tid_;
-    private string name_;
-
-    #endregion
-
-    /// <summary>
-    ///   Gets the frame information for the current stack frame.  This means
-    ///   getting a snapshot of the register state for each each frame in the
-    ///   stack so that memory address information can be derived at a later
-    ///   stage.
-    /// </summary>
-    /// <param name = "stack"></param>
     protected void RefreshFrameInfo(List<StackFrame> stack) {
       stack.Clear();
-      var regs = (RegsX86_64) program_.Dbg.GetRegisters(tid_);
-      var rset = new RegisterSet(RegisterSetSchema.DwarfAmd64Integer, null);
 
-      // TODO: need a less hacky way to initialize a RegisterSet from a 
-      // RegsX86_64.
-      foreach (
-          var registerDef in
-              RegisterSetSchema.DwarfAmd64Integer.Registers) {
+      
+      RegsX86_64 regs = new RegsX86_64();
+      regs = (RegsX86_64)program_.Dbg.GetRegisters(0);
+
+      RegisterSet rset = new RegisterSet(RegisterSetSchema.DwarfAmd64Integer, null);
+
+      // TODO: need a less hacky way to initialize a RegisterSet from a RegsX86_64.
+      foreach (var registerDef in RegisterSetSchema.DwarfAmd64Integer.Registers) {
         if (!registerDef.Pseudo) {
           rset[registerDef.Index] = regs[registerDef.Index];
         }
       }
-      while (rset["RIP"] != 0) {
-        stack.Add(new StackFrame(rset, this, program_.MainModule, program_.Dbg));
-        // Get the register values of the previous frame.
-        var sym = program_.Dbg.Symbols as NaClSymbolProvider;
-        var nextRset = sym.GetPreviousFrameState(rset);
-        // The toolchain creates a dummy frame at the outermost scope.  Gdb
-        // has some way to get past the dummy frame, but strict application of
-        // the DWARF spec makes it look circular to us.  TODO: investigate why
-        if (nextRset == null || nextRset["RIP"] == rset["RIP"]) {
-          break;
+
+        while(rset != null && rset["RIP"] != 0)
+        {
+          stack.Add(new StackFrame(rset, this, program_.MainModule, program_.Dbg));
+
+          //
+          // Get the register values of the previous frame.
+          //
+          NaClSymbolProvider sym = program_.Dbg.Symbols as NaClSymbolProvider;
+          rset = sym.GetPreviousFrameState(rset);
         }
-        rset = nextRset;
-      }
+
+
     }
+
+
+    #region Private Implementation
+
+    private string name_;
+
+    private List<StackFrame> stack_ = new List<StackFrame>();
+    private uint tid_;
+    private ProgramNode program_;
+
+    #endregion
   }
 }

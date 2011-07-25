@@ -140,21 +140,8 @@ namespace Google.MsAd7.BaseImpl {
 
     public int Terminate() {
       Debug.WriteLine("DebugProcess.Terminate");
-      try {
-        // Try to get the process, so we can kill it.
-        // If the process is no longer running, GetProcess
-        // will throw an ArgumentException.
-        var proc = Process.GetProcessById(Pid);
-        proc.Kill();        
-      } catch (ArgumentException e) {
-        // This happens legitimately if the program-under-debug
-        // has already finished.
-        // We need to catch this exception or the user gets a
-        // confusing message about not being able to terminate
-        // the (already finished) program-under-debug.
-        Debug.WriteLine("Caught Exception {" + e.Message +
-          "} in DebugProcess.cs");
-      }
+      var proc = Process.GetProcessById(Pid);
+      proc.Kill();
       return VSConstants.S_OK;
     }
 

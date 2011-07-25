@@ -91,7 +91,6 @@ class DebugAPIMock : public DebugAPI {
 
   bool single_step_enabled_;
   std::deque<FunctionId> called_functions_;
-  std::deque<DEBUG_EVENT> events_;
 };
 }  // namespace debug
 

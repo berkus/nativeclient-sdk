@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 #include "debugger/core/debuggee_thread.h"
 #include <assert.h>
-#include "debugger/base/debug_command_line.h"
 #include "debugger/core/debug_api.h"
 #include "debugger/core/debug_breakpoint.h"
 #include "debugger/core/debug_event.h"
@@ -14,7 +13,8 @@
 
 namespace {
 const size_t kMaxStringSize = 32 * 1024;
-const char* kNexeUuid = "{7AA7C9CF-89EC-4ed3-8DAD-6DC84302AB11}";
+const char* kNexeUuid =
+    "{7AA7C9CF-89EC-4ed3-8DAD-6DC84302AB11} -v 1 -event NaClThreadStart";
 }
 
 namespace debug {
@@ -50,43 +50,48 @@ bool DebuggeeThread::IsHalted() const {
 }
 
 void DebuggeeThread::OnOutputDebugString(DebugEvent* debug_event) {
-  std::string debug_str;
-  if (parent_process().ReadDebugString(&debug_str)) {
-     DBG_LOG("TR03.02", "OutputDebugString=[%s]", debug_str.c_str());
-  }
+  DEBUG_EVENT de = debug_event->windows_debug_event();
+  if (0 == debug_event->windows_debug_event().u.DebugString.fUnicode) {
+    size_t sz = de.u.DebugString.nDebugStringLength + 1;
+    size_t str_sz = min(kMaxStringSize, sz);
+    char* tmp = static_cast<char*>(malloc(str_sz));
+    if (NULL != tmp) {
+      if (parent_process().ReadMemory(
+          de.u.DebugString.lpDebugStringData,
+          str_sz,
+          tmp)) {
+        tmp[str_sz - 1] = 0;
 
-  if (strncmp(debug_str.c_str(), kNexeUuid, strlen(kNexeUuid)) == 0) {
-    /// This string is coming from sel_ldr.
-    // Here we are passing pointers from sel_ldr to the debugger.
-    // One might think that we can't use them because they are
-    // valid in sel_ldr address space only. This is not true.
-    // ::ReadProcessMemory can be used with these pointers.
-    // Note: these pointers are not untrusted NaCl, they are
-    // native windows flat pointers.
+        DBG_LOG("TR03.02", "OutputDebugString=%s", tmp);
 
-    // Here's list of possible messages from sel_ldr:
-    // "-version 1 -event AppCreate -nap %p -mem_start %p -user_entry_pt
-    //     %p -initial_entry_pt %p"
-    // "-version 1 -event ThreadCreate -natp %p"
-    // "-version 1 -event ThreadExit -natp %p -exit_code %d"
-    // "-version 1 -event AppExit -exit_code %d"
-    CommandLine debug_info(debug_str);
-    std::string event = debug_info.GetStringSwitch("-event", "");
-    if ("AppCreate" == event) {
-      void* nexe_mem_base = debug_info.GetAddrSwitch("-mem_start");
-      void* user_entry_point = debug_info.GetAddrSwitch("-user_entry_pt");
-      parent_process().set_nexe_mem_base(nexe_mem_base);
-      parent_process().set_nexe_entry_point(user_entry_point);
-      debug_event->set_nacl_debug_event_code(DebugEvent::kAppStarted);
-      DBG_LOG("TR03.03",
-              "NaClAppCreate mem_base=%p entry_point=%p",
-              nexe_mem_base,
-              user_entry_point);
-    } else if ("ThreadCreate" == event) {
-      is_nacl_app_thread_ = true;
-      debug_event->set_nacl_debug_event_code(
-          DebugEvent::kThreadIsAboutToStart);
-      DBG_LOG("TR03.07", "ThreadCreate thread_id=%d", id());
+        if (strncmp(tmp, kNexeUuid, strlen(kNexeUuid)) == 0) {
+          /// This string is coming from sel_ldr.
+          is_nacl_app_thread_ = true;
+          // Here we are passing pointers from sel_ldr to the debugger.
+          // One might think that we can't use them because they are
+          // valid in sel_ldr address space only. This is not true.
+          // ::ReadProcessMemory can be used with these pointers.
+          // Note: these pointers are not untrusted NaCl, they are
+          // native windows flat pointers.
+          void* nexe_mem_base = NULL;
+          void* nexe_entry_point = NULL;
+          sscanf(tmp + strlen(kNexeUuid),  // NOLINT
+                 " -mb %p -ep %p",  // %p because size is different on 32bit
+                 &nexe_mem_base,   // and 64-bit versions of windows.
+                 &nexe_entry_point);
+          parent_process().set_nexe_mem_base(nexe_mem_base);
+          parent_process().set_nexe_entry_point(nexe_entry_point);
+
+          debug_event->set_nacl_debug_event_code(
+              DebugEvent::kThreadIsAboutToStart);
+          DBG_LOG("TR03.03",
+                  "NaClThreadStart mem_base=%p entry_point=%p thread_id=%d",
+                  nexe_mem_base,
+                  nexe_entry_point,
+                  id());
+        }
+      }
+      free(tmp);
     }
   }
 }
@@ -336,7 +341,7 @@ void DebuggeeThread::Kill() {
 }
 
 bool DebuggeeThread::GetContext(CONTEXT* context) {
-  if (!parent_process().IsHalted())
+  if (!IsHalted())
     return false;
 
   context->ContextFlags = CONTEXT_ALL;
@@ -344,7 +349,7 @@ bool DebuggeeThread::GetContext(CONTEXT* context) {
 }
 
 bool DebuggeeThread::SetContext(const CONTEXT& context) {
-  if (!parent_process().IsHalted())
+  if (!IsHalted())
     return false;
 
   CONTEXT context_copy = context;
@@ -352,7 +357,7 @@ bool DebuggeeThread::SetContext(const CONTEXT& context) {
 }
 
 bool DebuggeeThread::GetWowContext(WOW64_CONTEXT* context) {
-  if (!parent_process().IsHalted())
+  if (!IsHalted())
     return false;
 
   context->ContextFlags = CONTEXT_ALL;
@@ -360,14 +365,14 @@ bool DebuggeeThread::GetWowContext(WOW64_CONTEXT* context) {
 }
 
 bool DebuggeeThread::SetWowContext(const WOW64_CONTEXT& context) {
-  if (!parent_process().IsHalted())
+  if (!IsHalted())
     return false;
 
   return (debug_api().Wow64SetThreadContext(handle_, &context) != FALSE);
 }
 
 void* DebuggeeThread::GetIP() {
-  if (!parent_process().IsHalted())
+  if (!IsHalted())
     return false;
 
   if (parent_process().IsWoW()) {
@@ -386,7 +391,7 @@ void* DebuggeeThread::GetIP() {
 }
 
 bool DebuggeeThread::SetIP(void* ip) {
-  if (!parent_process().IsHalted())
+  if (!IsHalted())
     return false;
 
   if (parent_process().IsWoW()) {

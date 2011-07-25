@@ -128,12 +128,7 @@ BOOL DebugAPIMock::SetThreadContext(HANDLE hThread, CONTEXT *lpContext) {
 BOOL DebugAPIMock::WaitForDebugEvent(LPDEBUG_EVENT lpDebugEvent,
                                  DWORD dwMilliseconds) {
   DAPI_PROLOG(WaitForDebugEvent);
-  if (events_.size() == 0)
-    return FALSE;
-
-  *lpDebugEvent = events_[0];
-  events_.pop_front();
-  return TRUE;
+  return FALSE;
 }
 
 BOOL DebugAPIMock::ContinueDebugEvent(DWORD dwProcessId,

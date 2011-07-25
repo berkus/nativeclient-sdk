@@ -104,13 +104,6 @@ void ExecutionEngine::GetProcessIds(std::deque<int>* processes) const {
   }
 }
 
-bool ExecutionEngine::HasAliveDebuggee() {
-  RemoveDeadProcesses();
-  std::deque<int> processes;
-  GetProcessIds(&processes);
-  return (processes.size() > 0);
-}
-
 void ExecutionEngine::RemoveDeadProcesses() {
   ProcessIter it = std::partition(processes_.begin(),
                                   processes_.end(),

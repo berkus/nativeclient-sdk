@@ -23,6 +23,7 @@ PLATFORM_MAPPING = {
     'linux': 'linux_x86',
     'linux2': 'linux_x86',
     'darwin': 'mac_x86',
+    'macos': 'mac_x86',
 }
 
 # Various architecture spec objecs suitable for use with
@@ -96,7 +97,7 @@ def GetJSONFromNexeSpec(nexe_spec):
     A JSON string representing |nexe_spec|.
   '''
   nmf_json = '{\n'
-  nmf_json += '  "program": {\n'
+  nmf_json += '  "nexes": {\n'
 
   # Add an entry in the JSON for each specified architecture.  Note that this
   # loop emits a trailing ',' for every line but the last one.
@@ -105,9 +106,9 @@ def GetJSONFromNexeSpec(nexe_spec):
     for arch_key in nexe_spec:
       line_count -= 1
       eol_char = ',' if line_count > 0 else ''
-      nmf_json += '    "%s": {"url": "%s"}%s\n' % (arch_key,
-                                                   nexe_spec[arch_key],
-                                                   eol_char)
+      nmf_json += '    "%s": "%s"%s\n' % (arch_key,
+                                          nexe_spec[arch_key],
+                                          eol_char)
 
   nmf_json += '  }\n'
   nmf_json += '}\n'
@@ -187,8 +188,7 @@ def MakeNaClModuleEnvironment(nacl_env,
                               sources,
                               module_name='nacl',
                               arch_spec=ARCH_SPECS['x86-32'],
-                              is_debug=False,
-                              dir_prefix=''):
+                              is_debug=False):
   '''Make a NaClProgram Node for a specific build variant.
 
   Make a NaClProgram Node in a cloned Environment.  Set the environment
@@ -203,7 +203,7 @@ def MakeNaClModuleEnvironment(nacl_env,
 
   Args:
     nacl_env: A SCons construction environment.  This is typically the return
-        value of NaClEnvironment() (see above).
+        value of NaClEnvironemnt() (see above).
     sources: A list of source Nodes used to build the NaCl module.
     module_name: The name of the module.  The name of the output program
         incorporates this as its prefix.
@@ -212,7 +212,6 @@ def MakeNaClModuleEnvironment(nacl_env,
         |ARCH_SPECS| in nacl_utils.py for valid examples.
     is_debug: Indicates whether this program should be built for debugging or
         optimized.
-    dir_prefix: Allows user to prefix the directory with an additional string.
   Returns:
     A SCons Environment that builds the specified variant of a NaCl module.
   '''
@@ -221,14 +220,9 @@ def MakeNaClModuleEnvironment(nacl_env,
   env = nacl_env.Clone()
   env.AppendOptCCFlags(is_debug)
   env.AppendArchFlags(arch_spec)
-  if not is_debug:
-    # Strip the resulting executable if non-debug.
-    env.Append(LINKFLAGS=['--strip-all'])
-
   return env.NaClProgram('%s_%s%s' % (module_name,
                                       arch_name,
                                       '_dbg' if is_debug else ''),
                          sources,
-                         variant_dir='%s%s_%s' %
-                             (dir_prefix, debug_name, arch_name))
+                         variant_dir='%s_%s' % (debug_name, arch_name))
 

@@ -1,8 +1,6 @@
-// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
-#region
+// Copyright 2010 The Native Client Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can
+// be found in the LICENSE file.
 
 using System;
 using System.Collections.Generic;
@@ -11,8 +9,6 @@ using Google.MsAd7.BaseImpl.Interfaces;
 using Google.MsAd7.BaseImpl.Interfaces.SimpleSymbolTypes;
 using Google.NaClVsx.DebugSupport;
 using Google.NaClVsx.DebugSupport.DWARF;
-
-#endregion
 
 namespace NaClVsx.Package_UnitTestProject {
   public class SymbolProviderMock : ISimpleSymbolProvider {
@@ -34,7 +30,7 @@ namespace NaClVsx.Package_UnitTestProject {
       throw new NotImplementedException();
     }
 
-    public IEnumerable<Symbol> GetSymbolsInScope(ulong instructionAddress) {
+    public IEnumerable<Symbol> GetSymbolsInScope(ulong programCounter) {
       throw new NotImplementedException();
     }
 

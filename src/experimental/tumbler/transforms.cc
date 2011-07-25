@@ -1,8 +1,8 @@
-// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
+// Copyright 2011 The Native Client Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can
+// be found in the LICENSE file.
 
-#include "experimental/tumbler/transforms.h"
+#include "examples/tumbler/transforms.h"
 
 #include <math.h>
 #include <string.h>

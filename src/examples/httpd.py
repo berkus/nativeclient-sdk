@@ -7,8 +7,9 @@
 
 """A tiny web server.
 
-This is intended to be used for testing, and only run from within the examples
-directory.
+This is intended to be used for testing, and
+only run from within the
+examples directory.
 """
 
 import BaseHTTPServer
@@ -50,9 +51,8 @@ def SanityCheckDirectory():
 # faster responses.
 class QuittableHTTPServer(SocketServer.ThreadingMixIn,
                           BaseHTTPServer.HTTPServer):
-  def serve_forever(self, timeout=0.5):
+  def serve_forever(self):
     self.is_running = True
-    self.timeout = timeout
     while self.is_running:
       self.handle_request()
 
@@ -96,12 +96,7 @@ def Run(server_address,
   logging.info("Starting local server on port %d", server_address[1])
   logging.info("To shut down send http://localhost:%d?quit=1",
                server_address[1])
-  try:
-    httpd.serve_forever()
-  except KeyboardInterrupt:
-    logging.info("Received keyboard interrupt.")
-    httpd.server_close()
-
+  httpd.serve_forever()
   logging.info("Shutting down local server on port %d", server_address[1])
 
 

@@ -79,6 +79,7 @@ def NaClEnvironment(use_c_plus_plus_libs=False):
                        '-Werror',
                        '-Wall',
                        '-Wswitch-enum',
+                       '-pedantic',
                        '-pthread',
                       ],
               CPPDEFINES=[# _GNU_SOURCE ensures that strtof() gets declared.
@@ -90,17 +91,20 @@ def NaClEnvironment(use_c_plus_plus_libs=False):
                          ('_POSIX_C_SOURCE', '199506'),
                          ('_XOPEN_SOURCE', '600'),
                          ],
-              CPPPATH=[],
+              CPPPATH=[os.path.join(toolchain, 'include'),
+                       # Note: <toolchain>/nacl is a symbolic link to
+                       # <toolchain>/nacl64 on *nix systems.  However, these
+                       # links are not supported well on Windows, so the
+                       # CPPPATH points directly to nacl64.
+                       os.path.join(toolchain, 'nacl64', 'include'),
+                      ],
               LINKFLAGS=['${EXTRA_LINKFLAGS}',
                         ],
               # The NaCl envorinment makes '.nexe' executables.  If this is
-              # not explicitly set, then SCons on Windows doesn't understand
+              # not expc=licitly set, then SCons on Windows doesn't understand
               # how to construct a Program builder properly.
               PROGSUFFIX='.nexe',
              )
-  # This supresses the "MS_DOS style path" warnings on Windows.  It's benign on
-  # all other platforms.
-  env['ENV']['CYGWIN'] = 'nodosfilewarning'
 
   # Append the common NaCl libs.
   common_nacl_libs = ['ppapi']

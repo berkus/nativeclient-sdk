@@ -63,7 +63,7 @@ void StandardContinuePolicy::MakeContinueDecision(
     const DebugEvent& debug_event,
     DebuggeeThread* thread,
     DecisionToContinue* dtc) {
-  if (DebugEvent::kNotNaClDebugEvent != debug_event.nacl_debug_event_code()) {
+  if (DebugEvent::kNotNaClDebugEvent != debug_event.nacl_debug_event_code_) {
     *dtc = DecisionToContinue(
         DecisionToContinue::kStrongDecision,
         DecisionToContinue::kHaltDebuggee,
@@ -71,8 +71,8 @@ void StandardContinuePolicy::MakeContinueDecision(
     return;
   }
 
-  int exception_code = debug_event.windows_debug_event().u.Exception.ExceptionRecord.ExceptionCode;
-  if (EXCEPTION_DEBUG_EVENT == debug_event.windows_debug_event().dwDebugEventCode) {
+  int exception_code = debug_event.windows_debug_event_.u.Exception.ExceptionRecord.ExceptionCode;
+  if (EXCEPTION_DEBUG_EVENT == debug_event.windows_debug_event_.dwDebugEventCode) {
     if (kVS2008_THREAD_INFO == exception_code) {
       dtc->Combine(
           DecisionToContinue(
@@ -83,7 +83,7 @@ void StandardContinuePolicy::MakeContinueDecision(
     } else {
       bool is_nexe = false;
       if (NULL != thread)
-        is_nexe = thread->IsNaClAppThread();
+        is_nexe = thread->is_nexe();
 
       DecisionToContinue::PassExceptionToDebuggee pass_to_debuggee =
           DecisionToContinue::kPassExceptionToDebuggee;

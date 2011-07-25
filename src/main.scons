@@ -34,11 +34,9 @@ Help for NaCl SDK
 
 Supported targets:
   * bot               Runs everything that the build and try bots run
-  * debugger          Build the debugging library code and tests.
   * docs              Build all of the Doxygen documentation
   * examples          Build the examples.
   * installer         Build the SDK installer
-  * toolchain         Update the toolchain's headers and libraries
   * vsx_build         Build the Visual Studio Plugin
 
 Supported flags:
@@ -70,7 +68,7 @@ def GetToolchainRoot(sdk_root=None):
     sdk_root = os.getenv('NACL_SDK_ROOT', '')
   if sys.platform == 'cygwin' or sys.platform.startswith('win'):
     variant = 'win_x86'
-  elif sys.platform == 'darwin':
+  elif sys.platform in ['darwin', 'macos']:
     variant = 'mac_x86'
   elif sys.platform in ['linux', 'linux2']:
     variant = 'linux_x86'
@@ -111,7 +109,7 @@ base_env = Environment(
     ROOT_DIR = os.path.abspath(os.getcwd()),
     IS_WINDOWS = sys.platform in ['cygwin', 'win32'],
     IS_LINUX = sys.platform in ['linux', 'linux2'],
-    IS_MAC = sys.platform == 'darwin',
+    IS_MAC = sys.platform in ['darwin', 'macos'],
     JOB_COUNT = GetOption('num_jobs')
 )
 
@@ -129,11 +127,10 @@ base_env.SetDefault(
 # in the order they appear.
 base_env.Append(
     BUILD_SCONSCRIPTS = [
-        'debugger/build.scons',
         'documentation/build.scons',
         'build_tools/build.scons',
         'project_templates/test.scons',
-        'experimental/visual_studio_plugin/build.scons',
+        'experimental/visual_studio_plugin',
     ],
 )
 
@@ -196,52 +193,6 @@ def AddNodeToTestSuite(env, node, suite_names, node_name, test_size='all'):
 
 base_env.AddMethod(AddNodeToTestSuite)
 
-def ShouldBeCleaned(env, targets, suite_names, node_name):
-  '''Determines whether a given set of targets require cleaning.
-
-  Args:
-    env - The calling environment.
-    targets - Any build artifacts to which a cleaning step might apply
-    suite_names - Any suites that might produce |targets|
-    node_name - A node that might produce |targets|
-  '''
-  if not env.GetOption('clean'):
-    return False
-
-  if len(COMMAND_LINE_TARGETS) > 0:
-    clean_this = False
-    for cl_target in COMMAND_LINE_TARGETS:
-      if cl_target in suite_names or cl_target == node_name:
-        clean_this = True
-        break
-    if not clean_this:
-      return False
-
-  for target in targets:
-    if os.path.exists(target):
-      return True
-  return False
-
-def AddCleanAction(env, targets, action, suite_names, node_name):
-  '''Adds a cleanup action that scons cannot detect automatically.
-
-  Cleaning will only occur if there is a match between the suite or nodes
-  specified on the command line, and suite_names or node_name or if no
-  suite or notes are specified on the command line.  Also, at least one of the
-  targets must exist on the file system.
-
-  Args:
-    env - The calling environment
-    targets - Artifacts to be cleaned.
-    action - The action to be performed.  It is up to the caller to ensure
-             that |action| will actually remove |targets|
-    suite_names - Any suites to which this cleanup target applies.
-    node_name - Any nodes to which this cleanup target applies.
-  '''
-  if ShouldBeCleaned(env, targets, suite_names, node_name):
-    env.Execute(action)
-
-base_env.AddMethod(AddCleanAction)
 
 def AddNodeAliases(env, node, suite_names, node_name):
   '''Allow a given node to be built under a different name or as a suite
@@ -356,90 +307,6 @@ def CreatePythonUnitTest(env, filename, dependencies=[], disabled=False,
 
 base_env.AddMethod(CreatePythonUnitTest)
 
-
-# ----------------------------------------------------------
-# Targets for updating sdk headers and libraries
-# NACL_SDK_XXX vars are defined by  site_scons/site_tools/naclsdk.py
-# NOTE: our task here is complicated by the fact that there might already be
-#       some (outdated) headers/libraries at the new location
-#       One of the hacks we employ here is to make every library depend
-#       on the installation on ALL headers (sdk_headers)
-
-# Contains all the headers to be installed
-sdk_headers = base_env.Alias('extra_sdk_update_header', [])
-# Contains all the libraries and .o files to be installed
-libs_platform = base_env.Alias('extra_sdk_libs_platform', [])
-libs = base_env.Alias('extra_sdk_libs', [])
-base_env.Alias('extra_sdk_update', [libs, libs_platform])
-
-AlwaysBuild(sdk_headers)
-
-toolchain_node = base_env.Alias('toolchain', [])
-
-
-def GetToolchainNode(env):
-  '''Returns the node associated with the toolchain build target'''
-  return toolchain_node
-
-base_env.AddMethod(GetToolchainNode)
-
-
-def GetHeadersNode(env):
-  return sdk_headers
-
-base_env.AddMethod(GetHeadersNode)
-
-
-def AddHeaderToSdk(env, nodes, subdir = 'nacl/', base_dir = None):
-  """Add a header file to the toolchain.  By default, Native Client-specific
-  headers go under nacl/, but there are non-specific headers, such as
-  the OpenGLES2 headers, that go under their own subdir."""
-  if not base_dir:
-    base_dir = os.path.join(env['NACL_TOOLCHAIN_ROOT'],
-                            'x86_64-nacl',
-                            'include')
-
-  node = env.Replicate(os.path.join(base_dir, subdir), nodes)
-  env.Depends(sdk_headers, node)
-  env.Depends(toolchain_node, node)
-  return node
-
-base_env.AddMethod(AddHeaderToSdk)
-
-def AddLibraryToSdkHelper(env, nodes, is_lib, is_platform):
-  """"Helper function to install libs/objs into the toolchain
-  and associate the action with the extra_sdk_update.
-
-  Args:
-    env: Environment in which we were called.
-    nodes: list of libc/objs
-    is_lib: treat nodes as libs
-    is_platform: nodes are truly platform specific
-  """
-  env.Requires(nodes, sdk_headers)
-
-  dir = ARGUMENTS.get('extra_sdk_lib_destination')
-  if not dir:
-    dir = '${NACL_SDK_LIB}/'
-
-  if is_lib:
-    n = env.ReplicatePublished(dir, nodes, 'link')
-  else:
-    n = env.Replicate(dir, nodes)
-
-  if is_platform:
-    env.Alias('extra_sdk_libs_platform', n)
-  else:
-    env.Alias('extra_sdk_libs', n)
-  return n
-
-
-def AddLibraryToSdk(env, nodes, is_platform=False):
-  return AddLibraryToSdkHelper(env, nodes, True, is_platform)
-
-base_env.AddMethod(AddLibraryToSdk)
-
-
 #-----------------------------------------------------------------------------
 # This is a simple environment that primarily for targets that aren't built
 # directly by scons, and therefore don't need any special environment setup
@@ -467,9 +334,9 @@ def ExamplesBuildCommand(env):
         the examples.
   '''
   if env.get('IS_WINDOWS'):
-    return 'scons.bat --jobs=%s' % GetOption('num_jobs')
+    return 'scons.bat'
   else:
-    return './scons --jobs=%s' % GetOption('num_jobs')
+    return './scons'
 
 
 def BuildExamples(env, target, source):
@@ -500,7 +367,7 @@ def CleanExamples(env):
                         shell=True)
 
 
-examples_builder = build_env.Alias('examples', [toolchain_node], BuildExamples)
+examples_builder = build_env.Alias('examples', [], BuildExamples)
 build_env.AlwaysBuild(examples_builder)
 # Handle the clean command.
 if GetOption('clean'):
