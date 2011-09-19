@@ -9,14 +9,14 @@
   of the NativeClient SDK web site: http://code.google.com/p/nativeclient-sdk/.
   -->
 <head>
-  <title>$safeprojectname$</title>
+  <title>Stub!</title>
 
   <script type="text/javascript">
-    $safeprojectname$Module = null;  // Global application object.
+    stubModule = null;  // Global application object.
     statusText = 'NO-STATUS';
 
     function moduleDidLoad() {
-      $safeprojectname$Module = document.getElementById('$safeprojectname$');
+      stubModule = document.getElementById('stub');
       updateStatus('SUCCESS');
     }
 
@@ -24,7 +24,7 @@
     // status message indicating that the module is still loading.  Otherwise,
     // do not change the status message.
     function pageDidLoad() {
-      if ($safeprojectname$Module == null) {
+      if (stubModule == null) {
         updateStatus('LOADING...');
       } else {
         // It's possible that the Native Client module onload event fired
@@ -52,32 +52,21 @@
 </head>
 <body onload="pageDidLoad()">
 
-<h1>Native Client $safeprojectname$ Module</h1>
+<h1>Native Client Module Stub</h1>
 <p>
-    <!-- Load the published .nexe.  This includes the 'src' attribute which
-    shows how to load multi-architecture modules.  Each entry in the "nexes"
-    object in the .nmf manifest file is a key-value pair: the key is the
-    runtime ('x86-32', 'x86-64', etc.); the value is a URL for the desired NaCl
-    module.  To load the debug versions of your .nexes, set the 'src'
-    attribute to the _dbg.nmf version of the manifest file.
-
-    Note that the <EMBED> element is wrapped inside a <DIV>, which has a 'load'
-    event listener attached.  This method is used instead of attaching the
-    'load' event listener directly to the <EMBED> element to ensure that the
-    listener is active before the NaCl module 'load' event fires.
-    -->
-    <div id="listener">
-      <script type="text/javascript">
-        document.getElementById('listener')
-            .addEventListener('load', moduleDidLoad, true);
-      </script>
-      <embed name="nacl_module"
-         id="$safeprojectname$"
+  <!-- Load the published .nexe.  This includes the 'nexes' attribute which
+  shows how to load multi-architecture modules.  Each entry in the
+  table is a key-value pair: the key is the runtime ('x86-32',
+  'x86-64', etc.); the value is a URL for the desired NaCl module.
+  -->
+  <embed name="nacl_module"
+         id="stub"
          width=0 height=0
-         src="$safeprojectname$.nmf"
-         type="application/x-nacl"
+         nexes="ARM: stub_arm.nexe
+                x86-32: stub_x86_32.nexe
+                x86-64: stub_x86_64.nexe"
+         type="application/x-ppapi-nacl-srpc"
          onload="moduleDidLoad();" />
-    </div>
 </p>
 
 <h2>Status</h2>

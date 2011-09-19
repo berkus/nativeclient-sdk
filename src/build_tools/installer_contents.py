@@ -11,9 +11,6 @@ Windows.
 """
 
 import os
-import sys
-from nacl_sdk_scons import nacl_utils
-
 
 # For each path in this list, its entire contents are added to the SDK
 # installer.  Directories are denoted by a trailing '/' - this is important
@@ -37,7 +34,6 @@ INSTALLER_CONTENTS = [
     'examples/pi_generator/',
     'examples/scons',
     'examples/sine_synth/',
-    'examples/tumbler/',
     'project_templates/README',
     'project_templates/c/',
     'project_templates/cc/',
@@ -46,11 +42,6 @@ INSTALLER_CONTENTS = [
     'project_templates/scons',
     'third_party/scons-2.0.1/',
 ]
-
-INSTALLER_CONTENTS.append('%s/' % nacl_utils.ToolchainPath(base_dir='',
-                                                           variant='newlib'))
-INSTALLER_CONTENTS.append('%s/' % nacl_utils.ToolchainPath(base_dir='',
-                                                           variant='glibc'))
 
 LINUX_ONLY_CONTENTS = [
     'third_party/ppapi/',
@@ -61,16 +52,12 @@ LINUX_ONLY_CONTENTS = [
     'third_party/valgrind/README',
     'third_party/valgrind/bin/memcheck',
     'third_party/valgrind/bin/tsan',
+    'toolchain/',
 ]
 
 MAC_ONLY_CONTENTS = [
     'third_party/ppapi/',
-]
-
-WINDOWS_ONLY_CONTENTS = [
-    'examples/httpd.cmd',
-    'examples/scons.bat',
-    'project_templates/scons.bat',
+    'toolchain/',
 ]
 
 # These files are user-readable documentation files, and as such get some
@@ -84,47 +71,6 @@ DOCUMENTATION_FILES = [
     'NOTICE',
     'README',
 ]
-
-
-def GetToolchainManifest(toolchain):
-  '''Get the toolchain manifest file.
-
-  These manifest files are used to create NSIS file sections for the
-  toolchains.  The manifest files are considered the source of truth for
-  symbolic links and other filesystem-specific information that is not
-  discoverable using python in Windows.
-
-  Args:
-    toolchain: The toolchain variant.  Currently supported values are 'newlib'
-        and 'glibc'.
-
-  Returns:
-    The os-specific path to the toolchain manifest file, relative to the SDK's
-        src directory.
-  '''
-  WINDOWS_TOOLCHAIN_MANIFESTS = {
-      'newlib': 'naclsdk_win_x86.tgz.manifest',
-      'glibc': 'toolchain_win_x86.tar.xz.manifest',
-  }
-  MAC_TOOLCHAIN_MANIFESTS = {
-      'newlib': 'naclsdk_mac_x86.tgz.manifest',
-      'glibc': 'toolchain_mac_x86.tar.bz2.manifest',
-  }
-  LINUX_TOOLCHAIN_MANIFESTS = {
-      'newlib': 'naclsdk_linux_x86.tgz.manifest',
-      'glibc': 'toolchain_linux_x86.tar.xz.manifest',
-  }
-  manifest_file = None
-  if sys.platform == 'win32':
-    manifest_file = WINDOWS_TOOLCHAIN_MANIFESTS[toolchain]
-  elif sys.platform == 'darwin':
-    manifest_file = MAC_TOOLCHAIN_MANIFESTS[toolchain]
-  elif sys.platform == 'linux2':
-    manifest_file = LINUX_TOOLCHAIN_MANIFESTS[toolchain]
-  if manifest_file:
-    return os.path.join('build_tools', 'toolchain_archives', manifest_file)
-  else:
-    return None
 
 
 def ConvertToOSPaths(path_list):

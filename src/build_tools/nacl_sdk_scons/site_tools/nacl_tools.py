@@ -12,44 +12,10 @@ from SCons import Script
 
 import nacl_utils
 import os
-import SCons
-
-def FilterOut(env, **kw):
-  """Removes values from existing construction variables in an Environment.
-
-  The values to remove should be a list.  For example:
-
-  env.FilterOut(CPPDEFINES=['REMOVE_ME', 'ME_TOO'])
-
-  Args:
-    env: Environment to alter.
-    kw: (Any other named arguments are values to remove).
-  """
-
-  kw = SCons.Environment.copy_non_reserved_keywords(kw)
-
-  for key, val in kw.items():
-    if key in env:
-      # Filter out the specified values without modifying the original list.
-      # This helps isolate us if a list is accidently shared
-      # NOTE if env[key] is a UserList, this changes the type into a plain
-      # list.  This is OK because SCons also does this in semi_deepcopy
-      env[key] = [item for item in env[key] if item not in val]
-
-    # TODO: SCons.Environment.Append() has much more logic to deal with various
-    # types of values.  We should handle all those cases in here too.  (If
-    # variable is a dict, etc.)
 
 def AppendOptCCFlags(env, is_debug=False):
   '''Append a set of CCFLAGS that will build a debug or optimized variant
   depending on the value of |is_debug|.
-
-  Uses optional build-specific flags for debug and optimized builds.  To set
-  these in your build.scons files you can do something like this:
-    nacl_env.Append(DEBUG_CCFLAGS=['-gfull'],
-                    OPT_CCFLAGS=['-ffast-math',
-                                 '-mfpmath=sse',
-                                 '-msse2'])
 
   Args:
     env: Environment to modify.
@@ -58,15 +24,14 @@ def AppendOptCCFlags(env, is_debug=False):
   '''
 
   if is_debug:
-    env.Append(CCFLAGS=['${DEBUG_CCFLAGS}',
-                        '-O0',
+    env.Append(CCFLAGS=['-O0',
                         '-g',
                        ])
   else:
-    env.Append(CCFLAGS=['${OPT_CCFLAGS}',
-                        '-O3',
+    env.Append(CCFLAGS=['-O2',
+                        '-fno-builtin',
                         '-fno-stack-protector',
-                        '-fomit-frame-pointer',
+                        '-fdiagnostics-show-option',
                        ])
 
 
@@ -88,11 +53,9 @@ def AppendArchFlags(env, arch_spec):
   cc_arch_flags = ['-m%s' % subarch]
   as_arch_flags = ['--%s' % subarch]
   if subarch == '64':
-    ld_arch_flags = ['-m64']
-    env['NACL_ARCHITECTURE'] = 'x86_64-nacl-'
+    ld_arch_flags = ['-melf64_nacl', '-m64']
   else:
-    ld_arch_flags = ['-m32']
-    env['NACL_ARCHITECTURE'] = 'i686-nacl-'
+    ld_arch_flags = ['-melf_nacl', '-m32']
   env.Append(ASFLAGS=as_arch_flags,
              CCFLAGS=cc_arch_flags,
              LINKFLAGS=ld_arch_flags)
@@ -135,9 +98,8 @@ def NaClTestProgram(env,
 
   This node will build the desired NaCl module with the debug flags turned on.
   The Alias node has a build action that runs the test under sel_ldr.  |env| is
-  expected to have variables named 'NACL_SEL_LDR<x>', and 'NACL_IRT_CORE<x>'
-  where <x> is the various architectures supported (e.g. NACL_SEL_LDR32 and
-  NACL_SEL_LLDR64)
+  expected to have variables named 'NACL_SEL_LDR<x>', where <x> is the
+  various architectures supported (e.g. NACL_SEL_LDR32 and NACL_SEL_LLDR64).
 
   Args:
     env: Environment to modify.
@@ -157,32 +119,22 @@ def NaClTestProgram(env,
   '''
 
   arch, subarch = nacl_utils.GetArchFromSpec(arch_spec)
+  arch_name = '%s_%s' % (arch, subarch)
   # Create multi-level dictionary for sel_ldr binary name.
-  NACL_SEL_LDR = {'x86' :
-                   {'32': '$NACL_SEL_LDR32',
-                    '64': '$NACL_SEL_LDR64'
-                   }
-                 }
-  NACL_IRT_CORE = {'x86' :
-                    {'32': '$NACL_IRT_CORE32',
-                     '64': '$NACL_IRT_CORE64'
-                    }
-                  }
+  NACL_SEL_LDR = { 'x86' : {'32': '$NACL_SEL_LDR32', '64': '$NACL_SEL_LDR64' } }
   arch_sel_ldr = NACL_SEL_LDR[arch][subarch]
   # if |arch| and |subarch| are not found, a KeyError exception will be
   # thrown, which will generate a stack trace for debugging.
   test_program = nacl_utils.MakeNaClModuleEnvironment(
                      env,
                      test_sources,
-                     module_name,
+                     '%s_%s_%s' % (module_name, arch_name, target_name),
                      arch_spec,
                      is_debug=True,
                      dir_prefix='test_')
   test_node = env.Alias(target_name,
                         source=test_program,
-                        action=arch_sel_ldr +
-                               ' -B %s' % NACL_IRT_CORE[arch][subarch] +
-                               ' $SOURCE')
+                        action=arch_sel_ldr + ' $SOURCE')
   # Tell SCons that |test_node| never goes out of date, so that you don't see
   # '<test_node> is up to date.'
   env.AlwaysBuild(test_node)
@@ -272,7 +224,6 @@ def AllNaClModules(env, sources, module_name):
     A 2-tuple of SCons Program nodes, the first element is the node that
         builds optimized .nexes; the second builds the debug .nexes.
   '''
-
   opt_nexes = env.NaClModules(sources, module_name, is_debug=False)
   env.GenerateNmf(target='%s.nmf' % module_name,
                   source=opt_nexes,
@@ -284,10 +235,6 @@ def AllNaClModules(env, sources, module_name):
                   source=dbg_nexes,
                   nexes={'x86-32': '%s_x86_32_dbg.nexe' % module_name,
                          'x86-64': '%s_x86_64_dbg.nexe' % module_name})
-  nacl_utils.PrintNaclPlatformBanner(module_name,
-      nacl_platform=env['TARGET_NACL_PLATFORM'],
-      variant=env['NACL_TOOLCHAIN_VARIANT'])
-
   return opt_nexes, dbg_nexes
 
 
@@ -299,12 +246,9 @@ def generate(env):
 
   NOTE: SCons requires the use of this name, which fails lint.
   '''
-  nacl_utils.AddCommandLineOptions()
-
   env.AddMethod(AllNaClModules)
   env.AddMethod(AppendOptCCFlags)
   env.AddMethod(AppendArchFlags)
-  env.AddMethod(FilterOut)
   env.AddMethod(InstallPrebuilt)
   env.AddMethod(NaClProgram)
   env.AddMethod(NaClTestProgram)

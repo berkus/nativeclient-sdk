@@ -34,4 +34,3 @@ using System.Runtime.InteropServices;
 
 [assembly: InternalsVisibleTo("NaClVsx.Package_IntegrationTestProject")]
 [assembly: InternalsVisibleTo("NaClVsx.Package_UnitTestProject")]
-[assembly: InternalsVisibleTo("SymbolDBViewer")]

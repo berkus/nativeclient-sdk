@@ -75,8 +75,6 @@ void DebuggeeThread::OnOutputDebugString(DebugEvent* debug_event) {
     if ("AppCreate" == event) {
       void* nexe_mem_base = debug_info.GetAddrSwitch("-mem_start");
       void* user_entry_point = debug_info.GetAddrSwitch("-user_entry_pt");
-      if (NULL == user_entry_point)  // No IRT present, use -initial_entry_pt.
-        user_entry_point = debug_info.GetAddrSwitch("-initial_entry_pt");
       parent_process().set_nexe_mem_base(nexe_mem_base);
       parent_process().set_nexe_entry_point(user_entry_point);
       debug_event->set_nacl_debug_event_code(DebugEvent::kAppStarted);
@@ -117,8 +115,6 @@ void DebuggeeThread::OnBreakpoint(DebugEvent* debug_event) {
     // it's our breakpoint.
     triggered_breakpoint_addr_ = br->address();
     br->RecoverCodeAtBreakpoint();
-    SetIP(reinterpret_cast<char*>(GetIP()) - 1);
-  } else if (IsNaClAppThread() && parent_process().compatibility_mode()) {
     SetIP(reinterpret_cast<char*>(GetIP()) - 1);
   }
 }
@@ -340,31 +336,40 @@ void DebuggeeThread::Kill() {
 }
 
 bool DebuggeeThread::GetContext(CONTEXT* context) {
-  if (NULL == context)
+  if (!parent_process().IsHalted())
     return false;
-  memset(context, 0, sizeof(*context));
+
   context->ContextFlags = CONTEXT_ALL;
   return (debug_api().GetThreadContext(handle_, context) != FALSE);
 }
 
 bool DebuggeeThread::SetContext(const CONTEXT& context) {
+  if (!parent_process().IsHalted())
+    return false;
+
   CONTEXT context_copy = context;
   return (debug_api().SetThreadContext(handle_, &context_copy) != FALSE);
 }
 
 bool DebuggeeThread::GetWowContext(WOW64_CONTEXT* context) {
-  if (NULL == context)
+  if (!parent_process().IsHalted())
     return false;
-  memset(context, 0, sizeof(*context));
+
   context->ContextFlags = CONTEXT_ALL;
   return (debug_api().Wow64GetThreadContext(handle_, context) != FALSE);
 }
 
 bool DebuggeeThread::SetWowContext(const WOW64_CONTEXT& context) {
+  if (!parent_process().IsHalted())
+    return false;
+
   return (debug_api().Wow64SetThreadContext(handle_, &context) != FALSE);
 }
 
 void* DebuggeeThread::GetIP() {
+  if (!parent_process().IsHalted())
+    return false;
+
   if (parent_process().IsWoW()) {
     WOW64_CONTEXT context;
     GetWowContext(&context);
@@ -381,6 +386,9 @@ void* DebuggeeThread::GetIP() {
 }
 
 bool DebuggeeThread::SetIP(void* ip) {
+  if (!parent_process().IsHalted())
+    return false;
+
   if (parent_process().IsWoW()) {
     WOW64_CONTEXT context;
     if (!GetWowContext(&context))

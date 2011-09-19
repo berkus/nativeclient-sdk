@@ -33,7 +33,6 @@ const int kErrorGetThreadContextFailed = 7;
 const int kErrorSetThreadContextFailed = 8;
 const int kErrorSingleStepFailed = 9;
 const int kErrorThreadIsDead = 10;
-const int kErrorThreadNotFound = 11;
 }  // namespace
 
 namespace debug {
@@ -65,8 +64,6 @@ void DebugServer::EnableCompatibilityMode() {
 bool DebugServer::Init() {
   rsp_packetizer_.SetPacketConsumer(this);
   execution_engine_ = new ExecutionEngine(&debug_api_);
-  if (compatibility_mode_)
-    execution_engine_->EnableCompatibilityMode();
 
   debug::TextFileLogger* log = new debug::TextFileLogger();
   log->Open("nacl-gdb_server_log.txt");
@@ -178,10 +175,6 @@ void DebugServer::HandleExecutionEngine(int wait_ms) {
               reinterpret_cast<char*>(halted_process->nexe_mem_base());
           uint64_t entry =
               reinterpret_cast<uint64_t>(halted_process->nexe_entry_point());
-          char* br_addr = base + entry;
-          logger_->Log("TR100.6",
-                       "CompatibilityMode: setting breakpoint at %p",
-                       br_addr);
           halted_process->SetBreakpoint(base + entry);
           halted_process->Continue();
           return;
@@ -218,7 +211,7 @@ void DebugServer::OnHaltedProcess(IDebuggeeProcess* halted_process,
                                   const DebugEvent& debug_event) {
   char tmp[1000];
   debug_event.ToString(tmp, sizeof(tmp));
-  logger_->Log("TR100.7",
+  logger_->Log("TR100.6",
               "Halted: pid=%d tid=%d\ndebugevent=%s\n",
               halted_process->id(),
               halted_process->GetHaltedThread()->id(),
@@ -245,7 +238,6 @@ void DebugServer::OnHaltedProcess(IDebuggeeProcess* halted_process,
           reinterpret_cast<uint64_t>(halted_process->nexe_entry_point());
       halted_process->RemoveBreakpoint(base + entry);
       ListenForRspConnection();
-      logger_->Log("TR100.8", "CompatibilityMode: hit breakpoint");
     }
   }
 }
@@ -367,7 +359,7 @@ void DebugServer::Visit(rsp::SetCurrentThreadCommand* packet) {
   int tid = static_cast<int>(packet->thread_id());
   bool res = false;
   if (-1 == tid) {  // all threads
-    res = true;
+    res = false;
   } else if (0 == tid) {  // any thread
     res = true;
   } else {
@@ -383,7 +375,7 @@ void DebugServer::Visit(rsp::SetCurrentThreadCommand* packet) {
   if (res)
     SendRspMessageToClient(rsp::OkReply());
   else
-    SendErrorReply(kErrorThreadNotFound);
+    SendErrorReply(kErrorSetFocusToAllThreadsIsNotSupported);
 }
 
 void DebugServer::Visit(rsp::ReadMemoryCommand* packet) {
@@ -498,7 +490,7 @@ void DebugServer::Visit(rsp::IsThreadAliveCommand* packet) {
   if (std::find(tids.begin(), tids.end(), packet->value()) != tids.end()) {
     SendRspMessageToClient(rsp::OkReply());
   } else {
-    SendErrorReply(kErrorThreadNotFound);
+    SendErrorReply(kErrorThreadIsDead);
   }
 }
 
@@ -525,19 +517,6 @@ void DebugServer::Visit(rsp::GetThreadInfoCommand* packet) {
     reply.set_threads_ids(nexe_tids);
     reply.set_eom(false);
   }
-  SendRspMessageToClient(reply);
-}
-
-void DebugServer::Visit(rsp::GetOffsetsCommand* packet) {
-  IDebuggeeProcess* proc = GetFocusedProcess();
-  if (NULL == proc)
-    return;
-
-  uint64_t mb = reinterpret_cast<uint64_t>(proc->nexe_mem_base());
-  rsp::GetOffsetsReply reply;
-  reply.set_data_offset(mb);
-  reply.set_text_offset(mb);
-
   SendRspMessageToClient(reply);
 }
 

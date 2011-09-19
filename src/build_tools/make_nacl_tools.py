@@ -16,25 +16,15 @@ import tempfile
 bot = build_utils.BotAnnotator()
 
 
-# The suffix used for NaCl moduels that are installed, such as irt_core.
-NEXE_SUFFIX = '.nexe'
-
 def MakeInstallDirs(options):
-  '''Create the necessary install directories in the SDK staging area.
-  '''
   install_dir = os.path.join(options.toolchain, 'bin');
   if not os.path.exists(install_dir):
     os.makedirs(install_dir)
-  runtime_dir = os.path.join(options.toolchain, 'runtime');
-  if not os.path.exists(runtime_dir):
-    os.makedirs(runtime_dir)
 
 
 def Build(options):
-  '''Build 32-bit and 64-bit versions of needed NaCL tools and libs.'''
+  '''Build 32-bit and 64-bit versions of both sel_ldr and ncval'''
   nacl_dir = os.path.join(options.nacl_dir, 'native_client')
-  toolchain_option = 'naclsdk_mode=custom:%s' % options.toolchain
-  libc_option = '' if options.lib == 'newlib' else ' --nacl_glibc'
   if sys.platform == 'win32':
     scons = os.path.join(nacl_dir, 'scons.bat')
     bits32 = 'vcvarsall.bat x86 && '
@@ -44,61 +34,31 @@ def Build(options):
     bits32 = ''
     bits64 = ''
 
-  # Build sel_ldr and ncval.
   def BuildTools(prefix, bits, target):
-    cmd = '%s%s -j %s --mode=%s platform=x86-%s naclsdk_validate=0 %s %s%s' % (
-        prefix, scons, options.jobs, options.variant, bits, target,
-        toolchain_option, libc_option)
+    cmd = '%s%s -j %s --mode=%s platform=x86-%s naclsdk_validate=0 %s' % (
+        prefix, scons, options.jobs, options.variant, bits, target)
     bot.Run(cmd, shell=True, cwd=nacl_dir)
 
   BuildTools(bits32, '32', 'sdl=none sel_ldr ncval')
   BuildTools(bits64, '64', 'sdl=none sel_ldr ncval')
 
-  # Build irt_core, which is needed for running .nexes with sel_ldr.
-  def BuildIRT(bits):
-    cmd = '%s -j %s irt_core --mode=opt-host,nacl platform=x86-%s %s' % (
-        scons, options.jobs, bits, toolchain_option)
-    bot.Run(cmd, shell=True, cwd=nacl_dir)
-
-  # only build the IRT using the newlib chain.  glibc does not support IRT.
-  if options.lib == 'newlib':
-    BuildIRT(32)
-    BuildIRT(64)
-
-  # Build and install untrusted libraries.
   def BuildAndInstallLibsAndHeaders(bits):
-    cmd = ('%s install --mode=opt-host,nacl libdir=%s includedir=%s '
-           'platform=x86-%s force_sel_ldr=none %s%s') % (
+    cmd = '%s install --mode=nacl libdir=%s includedir=%s platform=x86-%s' % (
         scons,
         os.path.join(options.toolchain,
                      'x86_64-nacl',
                      'lib32' if bits == 32 else 'lib'),
         os.path.join(options.toolchain, 'x86_64-nacl', 'include'),
-        bits,
-        toolchain_option,
-        libc_option)
+        bits)
     bot.Run(cmd, shell=True, cwd=nacl_dir)
 
   BuildAndInstallLibsAndHeaders(32)
   BuildAndInstallLibsAndHeaders(64)
 
 
-def Install(options, tools=[], runtimes=[]):
-  '''Install the NaCl tools and runtimes into the SDK staging area.
-
-  Assumes that all necessary artifacts are built into the NaCl scons-out/staging
-  directory, and copies them from there into the SDK staging area under
-  toolchain.
-
-  Args:
-    options: The build options object.  This is populated from command-line
-        args at start-up.
-    tools: A list of tool names, these should *not* have any executable
-        suffix - this utility adds that (e.g. '.exe' on Windows).
-    runtimes: A list of IRT runtimes.  These artifacts should *not* have any
-        suffix attached - this utility adds the '.nexe' suffix along with an
-        ISA-specific string (e.g. '_x86_32').
-  '''
+def Install(options, tools):
+  # Figure out where tools are and install the build artifacts into the
+  # SDK tarball staging area.
   # TODO(bradnelson): add an 'install' alias to the main build for this.
   nacl_dir = os.path.join(options.nacl_dir, 'native_client')
   tool_build_path_32 = os.path.join(nacl_dir,
@@ -122,36 +82,27 @@ def Install(options, tools=[], runtimes=[]):
                              'bin',
                              '%s_x86_64%s' % (nacl_tool, options.exe_suffix)))
 
-  irt_build_path_32 = os.path.join(nacl_dir,
-                                   'scons-out',
-                                   'nacl_irt-x86-32',
-                                   'staging')
-  irt_build_path_64 = os.path.join(nacl_dir,
-                                    'scons-out',
-                                    'nacl_irt-x86-64',
-                                    'staging')
-  for nacl_irt in runtimes:
-    shutil.copy(os.path.join(irt_build_path_32,
-                             '%s%s' % (nacl_irt, NEXE_SUFFIX)),
-                os.path.join(options.toolchain,
-                             'runtime',
-                             '%s_x86_32%s' % (nacl_irt, NEXE_SUFFIX)))
-    shutil.copy(os.path.join(irt_build_path_64,
-                             '%s%s' % (nacl_irt, NEXE_SUFFIX)),
-                os.path.join(options.toolchain,
-                             'runtime',
-                             '%s_x86_64%s' % (nacl_irt, NEXE_SUFFIX)))
+
+#Cleans up the checkout directories if -c was provided as a command line arg.
+def CleanUpCheckoutDirs(options):
+  if(options.cleanup):
+    bot.Print('Removing scons-out')
+    scons_out = os.path.join(options.nacl_dir, 'native_client', 'scons-out')
+    if sys.platform != 'win32':
+      shutil.rmtree(scons_out, ignore_errors=True)
+    else:
+      # Intentionally ignore return value since a directory might be in use.
+      subprocess.call(['rmdir', '/Q', '/S', scons_out],
+                      env=os.environ.copy(),
+                      shell=True)
 
 
 def BuildNaClTools(options):
-  if(options.clean):
-    bot.Print('Removing scons-out')
-    scons_out = os.path.join(options.nacl_dir, 'native_client', 'scons-out')
-    build_utils.CleanDirectory(scons_out)
-  else:
-    MakeInstallDirs(options)
-    Build(options)
-    Install(options, tools=['sel_ldr', 'ncval'], runtimes=['irt_core'])
+  bot.BuildStep('build NaCl tools')
+  CleanUpCheckoutDirs(options)
+  MakeInstallDirs(options)
+  Build(options)
+  Install(options, ['sel_ldr', 'ncval'])
   return 0
 
 
@@ -169,11 +120,7 @@ def main(argv):
       default='toolchain',
       help='where to put the NaCl tool binaries')
   parser.add_option(
-      '-l', '--lib', dest='lib',
-      default='newlib',
-      help='whether to build against newlib (default) or glibc')
-  parser.add_option(
-      '-c', '--clean', action='store_true', dest='clean',
+      '-c', '--cleanup', action='store_true', dest='cleanup',
       default=False,
       help='whether to clean up the checkout files')
   parser.add_option(
@@ -187,7 +134,7 @@ def main(argv):
   if args:
     parser.print_help()
     bot.Print('ERROR: invalid argument(s): %s' % args)
-    return 1
+    sys.exit(1)
 
   options.toolchain = os.path.abspath(options.toolchain)
   options.exe_suffix = exe_suffix
@@ -201,10 +148,6 @@ def main(argv):
   else:
     assert False
   options.variant = variant
-
-  if options.lib not in ['newlib', 'glibc']:
-    bot.Print('ERROR: --lib must either be newlib or glibc')
-    return 1
 
   return BuildNaClTools(options)
 

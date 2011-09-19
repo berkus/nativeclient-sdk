@@ -2,38 +2,31 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
 
   <UsingTask TaskName="NaClVsx.Tasks.NaClExec" AssemblyFile="NaClVsx.Tasks.dll"/>
+  
+  <PropertyGroup>
+    <gcc>nacl-g++.exe</gcc>
+  </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetArch)' == 'x86_32'">
-    <gcpp>i686-nacl-g++.exe</gcpp>
-    <gcc>i686-nacl-gcc.exe</gcc>
-  </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(TargetArch)' == 'x86_64'">
-    <gcpp>x86_64-nacl-g++.exe</gcpp>
-    <gcc>x86_64-nacl-gcc.exe</gcc>
-  </PropertyGroup>
-  
   
   <PropertyGroup Condition="'$(TargetArch)' == 'x86_32'">
-    <StartProgram>$(NaClSDKRoot)\sel_ldr_x86_32.exe</StartProgram>
+    <StartProgram>$(NaClSDKRoot)\sel_ldr.exe</StartProgram>
     <archflag>-m32</archflag>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetArch)' == 'x86_64'">
-    <StartProgram>$(NaClSDKRoot)\sel_ldr_x86_64.exe</StartProgram>
+    <StartProgram>$(NaClSDKRoot)\sel_ldr64.exe</StartProgram>
     <archflag>-m64</archflag>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetArch)' == 'x86_32'">
-    <StartProgram>$(NaClSDKRoot)\sel_ldr_x86_32.exe</StartProgram>
+    <StartProgram>$(NaClSDKRoot)\sel_ldr.exe</StartProgram>
     <archlinkflag>-melf32_nacl</archlinkflag>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetArch)' == 'x86_64'">
-    <StartProgram>$(NaClSDKRoot)\sel_ldr_x86_64.exe</StartProgram>
+    <StartProgram>$(NaClSDKRoot)\sel_ldr64.exe</StartProgram>
     <archlinkflag>-melf64_nacl</archlinkflag>
   </PropertyGroup>
-
 
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -65,30 +58,13 @@
     <Lib Include="$(Lib)"/>
   </ItemGroup>
 
-  <ItemGroup>
-    <WebSrcs Include="*.html" />
-    <WebSrcs Include="*.js" />
-    <WebSrcs Include="*.nmf" />
-  </ItemGroup>
-
   <Target Name="Compile"
           Inputs="@(Compile)"
           Outputs="@(Obj)">
     <MakeDir Directories="$(IntermediatePath)"/>
-    <NaClExec Command="$(gcpp)"
-          C_Command="$(gcc)"
-          CFlags="$(CFLAGS)"
-          CCFlags="$(CCFLAGS)"
-          CXXFlags="$(CXXFLAGS)"
-          FileExtension="@(Compile -> '%(extension)')"
-          Arguments="$(INCLUDES) $(OPT_FLAGS) $(archflag) -c '%(FullPath)' -o @(Compile -> '$(IntermediatePath)%(filename).o')"
-          ToolPath="$(NaClSDKRoot)\toolchain\$(Toolchain)\bin\"/>
-  </Target>
-
-  <Target Name="CopyWebFiles">
-    <Message Text="Deploying SrcFiles=@(WebSrcs) TO Dest=$(OutputPath)" Importance="high" />
-    <Copy SourceFiles="@(WebSrcs)"
-          DestinationFolder="$(OutputPath)" />
+    <NaClExec Command="$(gcc)"
+          Arguments="$(cflags) $(INCLUDES) $(OPT_FLAGS) $(archflag) -c '%(FullPath)' -o @(Compile -> '$(IntermediatePath)%(filename).o')"
+          ToolPath="$(NaClSDKRoot)\toolchain\win_x86\bin\"/>
   </Target>
 
   <Target Name="Link"
@@ -96,13 +72,13 @@
           Inputs="@(Obj)"
           Outputs="$(OutputFullPath)">
     <MakeDir Directories="$(OutputPath)"/>
-    <NaClExec Command="$(gcpp)"
+    <NaClExec Command="$(gcc)"
               Arguments="@(Lib -> '-L%(FullPath)', ' ') @(Obj, ' ') @(LinkLibs -> '-l%(Identity)', ' ') $(archlinkflag) $(archflag) -o $(OutputFullPath)"
-              ToolPath="$(NaClSDKRoot)\toolchain\$(Toolchain)\bin\"/>
+              ToolPath="$(NaClSDKRoot)\toolchain\win_x86\bin\"/>
   </Target>
 
   <Target Name="Build"
-          DependsOnTargets="Compile;Link;CopyWebFiles">
+          DependsOnTargets="Compile;Link">
   </Target>
 
   <Target Name="Clean">

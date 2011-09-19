@@ -14,8 +14,8 @@
 #include <deque>
 #include <string>
 
-#include "debug_api_linux.h"
-#include "debug_blob.h"
+#include "linux_oop_debugger/debug_api_linux.h"
+#include "linux_oop_debugger/debug_blob.h"
 
 void* atoptr(const char* str) {
   void* ptr = 0;
@@ -61,14 +61,10 @@ int main(int argc, char *argv[]) {
   debug::DebugApi deb_api;
   pid_t child_pid = 0;
 
-#define CHROMEEE
+// #define CHROMEEE
 #ifdef CHROMEEE
-//  const char* cmd_line = "/usr/local/google/garianov/chrome/src/out/Debug/chrome --no-sandbox --allow-sandbox-debugging --disable-seccomp-sandbox";
-  const char* cmd_line = "/usr/local/google/garianov/chrome/src/out/Debug/chrome --incognito http://localhost:5103/hello_world_c/hello_world.html";
-  printf("Starting [%s]\npress any key...", cmd_line);
-  getchar();
   bool sp_res = deb_api.StartProcess(
-      cmd_line,
+      "/usr/local/google/garianov/chrome/src/out/Debug/chrome",
       true,
       &child_pid);
 #else
@@ -78,7 +74,7 @@ int main(int argc, char *argv[]) {
       &child_pid);
 #endif
 
-  bool show_events = false; //true; //aaa
+  bool show_events = true;
   int nacl_pid = 0;
   bool animate = false;
   FILE* file = fopen("anim.txt", "wt");
@@ -107,18 +103,12 @@ int main(int argc, char *argv[]) {
         printf("show_events = false\n");
         show_events = false;
         continue;
-      } else if (words[0] == "q") {
-        break;
       }
     }
 
+    bool do_continue = false;
     debug::DebugEvent de;
     if (deb_api.WaitForDebugEvent(&de)) {
-      //beg - test only
-      //iterative = true;
-      //nacl_pid = de.process_id_;
-      //end - test only
-
       if (debug::DebugEvent::OUTPUT_DEBUG_STRING == de.event_code_) {
         iterative = true;
         nacl_pid = de.process_id_;
@@ -129,35 +119,10 @@ int main(int argc, char *argv[]) {
         printf("\n");
 //        deb_api.ContinueDebugEvent(de.process_id_);
 //        do_continue = true;
-      } else if (de.signal_no_ == SIGTRAP) {
-        // Checking for possible OUTPUT_DEBUG_STRING event
-        char* rax = 0;
-        deb_api.GetRax(de.process_id_, &rax);
-
-        const char* key = "{7AA7C9CF-89EC-4ed3-8DAD-6DC84302AB11}";
-        size_t key_len = strlen(key);
-
-        size_t rd = 0;
-        char buff[1024] = {0, 0};
-        deb_api.ReadProcessMemory(de.process_id_, rax, buff, sizeof(buff), &rd);
-        if (rd > 0) {
-          buff[sizeof(buff) - 1] = 0;
-          debug::Blob bb(buff, rd);
-          printf("OUTPUT_DEBUG_STRING=[%s]\n", bb.ToString().c_str());
-        }
-
-        if ((memcmp(key, buff, key_len) ==0)) {
-           iterative = true;
-           nacl_pid = de.process_id_;
-           printf("%s\n", "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%Gotcha!=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>=>");
-        }
       }
 
-
-      if (show_events || (nacl_pid == de.process_id_))
-        //||         (debug::DebugEvent::SINGLE_STEP_TRAP == de.event_code_))
-//        int ppid = get_ppid();
-//        printf()
+      if (show_events || (nacl_pid == de.process_id_) ||
+         (debug::DebugEvent::SINGLE_STEP_TRAP == de.event_code_))
         de.Print();
 
       if (animate && (nacl_pid == de.process_id_) &&
@@ -170,7 +135,7 @@ int main(int argc, char *argv[]) {
         continue;
       }
 
-      while (true) {
+      while (!do_continue) {
         char buff[100] = { 0 };
 
         // test only: beg
@@ -201,9 +166,8 @@ int main(int argc, char *argv[]) {
           continue;
         if (words[0] == "c") {
           int signo = de.signal_no_;
-          if ((signo == SIGTRAP) || (debug::DebugEvent::OUTPUT_DEBUG_STRING == de.event_code_))  // don't pass it to debugee
+          if ((signo == SIGTRAP))  // don't pass it to debugee
             signo = 0;
-//          printf("ContinueDebugEvent line %d\n", __LINE__);
           deb_api.ContinueDebugEvent(de.process_id_, signo);
           break;
         } else if (words[0] == "a") {
@@ -211,7 +175,7 @@ int main(int argc, char *argv[]) {
           deb_api.SingleStep(nacl_pid);
           break;
         } else if (words[0] == "e-") {
-  //        printf("show_events = false\n");
+          printf("show_events = false\n");
           show_events = false;
           continue;
         } else if (words[0] == "ss") {
@@ -219,12 +183,10 @@ int main(int argc, char *argv[]) {
           continue;
         } else if (words[0] == "ce") {
 //          deb_api.EnableSingleStep(de.process_id_, false);
-//          printf("ContinueDebugEvent line %d\n", __LINE__);
           deb_api.ContinueDebugEvent(de.process_id_, de.signal_no_);
           break;
         } else if (words[0] == "cn") {
 //          deb_api.EnableSingleStep(de.process_id_, false);
-//          printf("ContinueDebugEvent line %d\n", __LINE__);
           deb_api.ContinueDebugEvent(de.process_id_, 0);
           break;
         } else if (words[0] == "si") {
@@ -236,7 +198,6 @@ int main(int argc, char *argv[]) {
         } else if (words[0] == "cb") {
           // continue and break immediately
 //          deb_api.EnableSingleStep(de.process_id_, false);
-//          printf("ContinueDebugEvent line %d\n", __LINE__);
           deb_api.ContinueDebugEvent(de.process_id_, 0);
           bool res = deb_api.DebugBreak(de.process_id_);
           if (!res)
@@ -247,13 +208,11 @@ int main(int argc, char *argv[]) {
           int len = atoi(words[2].c_str());
           size_t rd = 0;
           char buff[1024];
-          printf("ReadingMem pid=%d addr=%p len=%d ...", de.process_id_, addr, len);
           bool res = deb_api.ReadProcessMemory(de.process_id_,
                                                addr,
                                                buff,
                                                len,
                                                &rd);
-          printf("%d\n", (int)rd);
           if (res) {
             debug::Blob blob(buff, rd);
             std::string str = blob.ToHexString(false);
@@ -330,7 +289,6 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-    printf("Exiting...");
     return 1;
 }
 

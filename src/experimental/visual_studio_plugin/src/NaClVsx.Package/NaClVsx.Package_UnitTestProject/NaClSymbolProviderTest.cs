@@ -9,7 +9,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Google.MsAd7.BaseImpl;
 using Google.MsAd7.BaseImpl.DebugProperties;
-using Google.MsAd7.BaseImpl.Interfaces.SimpleSymbolTypes;
 using Google.NaClVsx.DebugSupport;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -86,7 +85,6 @@ namespace NaClVsx.Package_UnitTestProject {
       var expectedNames = new List<string> {
           "x",
           "y",
-          "test_string",
           "argc",
           "argv",
           "g_GlobalData"
@@ -100,12 +98,11 @@ namespace NaClVsx.Package_UnitTestProject {
           NaClPackageTestUtils.kMainEndRow);
       expectedNames.Remove("x");
       expectedNames.Remove("y");
-      expectedNames.Remove("test_string");
       TestForSymbolsInScopeAt(pos, expectedNames);
     }
 
     [TestMethod]
-    public void GetSymbolTypeIntTest() {
+    public void GetSymbolTypeTest() {
       var addr = NaClPackageTestUtils.GetAddressForPosition(
           NaClPackageTestUtils.GetLoopCCPath(),
           NaClPackageTestUtils.kDeclarationOfIRow,
@@ -124,35 +121,6 @@ namespace NaClVsx.Package_UnitTestProject {
     }
 
     [TestMethod]
-    public void GetSymbolTypeStringTest() {
-      var addr = NaClPackageTestUtils.GetAddressForPosition(
-          NaClPackageTestUtils.GetLoopCCPath(),
-          NaClPackageTestUtils.kDeclarationOfTestStringRow,
-          sym_);
-      var symbols = sym_.GetSymbolsInScope(addr);
-
-      var testStringSymbol = new Symbol {
-          Name = null,
-          Key = 0
-      };
-      foreach (var symbol in symbols) {
-        if ("test_string" == symbol.Name) {
-          testStringSymbol = symbol;
-        }
-      }
-      Assert.IsNotNull(testStringSymbol.Name);
-      Assert.AreNotEqual(0, testStringSymbol.Key);
-
-      Assert.AreEqual("test_string", testStringSymbol.Name);
-      var symbolType = sym_.GetSymbolType(testStringSymbol.Key);
-
-      Assert.AreEqual("string", symbolType.Name);
-      Assert.IsTrue(4 == symbolType.SizeOf);
-      Assert.IsFalse(0 == symbolType.Key);
-      Assert.IsFalse(symbolType.Key == testStringSymbol.Key);
-    }
-
-    [TestMethod]
     public void GetSymbolValueTest() {
       // loop.cc(10,0):
       // should have global variable g_gGlobalData, formal
@@ -164,19 +132,20 @@ namespace NaClVsx.Package_UnitTestProject {
       var symbols = sym_.GetSymbolsInScope(addr);
 
       // first symbol should be "i"
-      var symbol = symbols.First();
+      var s = symbols.First();
 
-      Assert.AreEqual("i", symbol.Name);
+      Assert.AreEqual("i", s.Name);
+      var t = sym_.GetSymbolType(s.Key);
 
       var bytes = BitConverter.GetBytes((Int64) 1234567);
       var arrBytes = new ArraySegment<byte>(bytes);
-      var symbolValue = sym_.SymbolValueToString(symbol.Key, arrBytes);
-      Assert.AreEqual(symbolValue, "1234567");
+      var o = sym_.SymbolValueToString(s.Key, arrBytes);
+      Assert.AreEqual(o, "1234567");
 
       bytes = BitConverter.GetBytes((Int64) (-1234567));
       arrBytes = new ArraySegment<byte>(bytes);
-      symbolValue = sym_.SymbolValueToString(symbol.Key, arrBytes);
-      Assert.AreEqual(symbolValue, "-1234567");
+      o = sym_.SymbolValueToString(s.Key, arrBytes);
+      Assert.AreEqual(o, "-1234567");
     }
 
     [TestMethod]

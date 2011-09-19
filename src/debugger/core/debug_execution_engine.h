@@ -53,13 +53,6 @@ class ExecutionEngine {
   explicit ExecutionEngine(DebugAPI* debug_api);
   virtual ~ExecutionEngine();
 
-  /// If enabled, ExecutionEngine runs in the mode
-  /// compatible with in-process debug stub:
-  /// it decrements IP after hitting breakpoints
-  void EnableCompatibilityMode() {
-    compatibility_mode_ = true;
-  }
-
   /// Starts debugee process, it will be attached to debugger.
   /// @param[in] cmd the command line to be executed.
   /// @param[in] work_dir the full path to the working directory for
@@ -135,7 +128,6 @@ class ExecutionEngine {
   DebugEvent debug_event_;
   std::deque<IDebuggeeProcess*> processes_;
   DebugAPI& debug_api_;
-  bool compatibility_mode_;
 
   ExecutionEngine(const ExecutionEngine&);  // DISALLOW_COPY_AND_ASSIGN
   void operator=(const ExecutionEngine&);

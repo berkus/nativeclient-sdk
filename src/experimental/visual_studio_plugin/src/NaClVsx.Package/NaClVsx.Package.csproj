@@ -72,7 +72,6 @@
   <ItemGroup>
     <Compile Include="DebugSupport\BreakpointInfo.cs" />
     <Compile Include="DebugSupport\DWARF\DebugInfoEntry.cs" />
-    <Compile Include="DebugSupport\DWARF\RangeListEntry.cs" />
     <Compile Include="DebugSupport\INaClDebugger.cs" />
     <Compile Include="DebugSupport\NaClPort.cs" />
     <Compile Include="DebugSupport\NaClPortSupplier.cs" />
@@ -160,10 +159,6 @@
     <None Include="Templates\Projects\ConsoleApp\NaClNexe.vstemplate" />
     <Content Include="Templates\Projects\ConsoleApp\NaClProject.ico">
     </Content>
-    <Content Include="Templates\Projects\WebApp_C\NaClProject.ico" />
-    <Content Include="Templates\Projects\WebApp_C\stub.html">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
     <Content Include="Templates\Projects\WebApp\stub.nmf">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
@@ -181,14 +176,6 @@
   <ItemGroup>
     <None Include="Templates\Projects\ConsoleApp\NaClNexe.naclproj">
     </None>
-    <Content Include="Templates\Projects\WebApp_C\stub.nmf">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Templates\Projects\WebApp_C\WebApp.c">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Templates\Projects\WebApp_C\WebApp_C.vstemplate" />
-    <None Include="Templates\Projects\WebApp_C\WebApp_C.naclproj" />
     <None Include="Templates\Projects\WebApp\WebApp.naclproj">
     </None>
   </ItemGroup>

@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "experimental/conways_life/locking_image_data.h"
-#include "experimental/conways_life/scoped_pixel_lock.h"
 #include "experimental/conways_life/stamp.h"
 #include "experimental/conways_life/threading/condition_lock.h"
 #include "experimental/conways_life/threading/pthread_ext.h"

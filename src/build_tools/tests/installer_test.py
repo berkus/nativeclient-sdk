@@ -14,7 +14,6 @@ The general structure is as follows:
 
 from __future__ import with_statement
 
-import cStringIO
 import datetime
 import httplib
 import optparse
@@ -27,11 +26,8 @@ import subprocess
 import sys
 import time
 import unittest
-import urllib
 
 from build_tools import build_utils
-from build_tools import sdk_update
-from build_tools import update_manifest
 
 annotator = build_utils.BotAnnotator()
 
@@ -48,40 +44,20 @@ def TestingClosure(_outdir, _jobs):
   '''
   toolchain_base = build_utils.NormalizeToolchain(base_dir=_outdir)
   toolchain_bin = os.path.join(toolchain_base, 'bin')
-  toolchain_runtime = os.path.join(toolchain_base, 'runtime')
   gcc64 = os.path.join(toolchain_bin, 'x86_64-nacl-gcc')
   sel_ldr64 = os.path.join(toolchain_bin, 'sel_ldr_x86_64')
-  irt_core64 = os.path.join(toolchain_runtime, 'irt_core_x86_64.nexe')
-  scons = 'scons.bat' if sys.platform == 'win32' else 'scons'
 
   class TestSDK(unittest.TestCase):
     '''Contains tests that run within an extracted SDK installer'''
 
-    def testBuildExamplesVariant(self):
-      '''Verify non-default toolchain SDK example build.'''
+    def testBuildExamples(self):
+      '''Verify that we can build the SDK examples.'''
 
-      def buildExamplesWithFlags(flags=[]):
-        '''A small helper function that runs scons with arch and variant flags.
+      scons = 'scons.bat' if sys.platform == 'win32' else 'scons'
+      path = os.path.join(_outdir, 'examples')
+      command = [os.path.join(path, scons), '-j', _jobs]
 
-        Args:
-          flags: Any extra flags to pass to scons.  Must be an array,
-              can be empty.
-        '''
-        path = os.path.join(_outdir, 'examples')
-        command = [os.path.join(path, scons), '-j', _jobs] + flags
-        annotator.Run(' '.join(command), cwd=path, shell=True)
-
-      buildExamplesWithFlags(['--architecture=x86', '--variant=newlib'])
-      buildExamplesWithFlags(['--architecture=x86', '--variant=glibc'])
-      print "Test with bogus architectures, variants."
-      print "We expect these tests to throw exceptions:"
-      self.assertRaises(subprocess.CalledProcessError,
-                        buildExamplesWithFlags,
-                        flags=['--architecture=nosucharch'])
-      self.assertRaises(subprocess.CalledProcessError,
-                        buildExamplesWithFlags,
-                        flags=['--variant=nosuchvariant'])
-
+      annotator.Run(' '.join(command), cwd=path, shell=True)
 
     def testReadMe(self):
       '''Check that the current build version and date are in the README file'''
@@ -103,20 +79,6 @@ def TestingClosure(_outdir, _jobs):
                              datetime.timedelta(days=1))),
           "Cannot find today's or yesterday's date in README")
 
-    def testRunHelloWorldUnittest(self):
-      '''Verify that we can build and run the hello_world unit test.'''
-      bit_widths = build_utils.SupportedNexeBitWidths()
-      test_targets = ['test%d' % bits for bits in bit_widths]
-
-      if len(test_targets) == 0:
-        annotator.Print('No test targets found')
-        return
-      print 'running targets: %s' % str(test_targets)
-      path = os.path.join(_outdir, 'examples', 'hello_world')
-      command = [os.path.join(path, '..', scons), '-j', _jobs] + test_targets
-
-      annotator.Run(' '.join(command), cwd=path, shell=True)
-
     def testHttpd(self):
       '''Test the simple HTTP server.
 
@@ -127,10 +89,7 @@ def TestingClosure(_outdir, _jobs):
 
       DEFAULT_SERVER_PORT = 5103
 
-      def runAndQuitHttpServer(port=DEFAULT_SERVER_PORT,
-                               alternate_cwd=None,
-                               extra_args=[],
-                               should_fail=False):
+      def runAndQuitHttpServer(port=DEFAULT_SERVER_PORT):
         '''A small helper function to launch the simple HTTP server.
 
         This function launches the simple HTTP server, then waits for its
@@ -151,17 +110,13 @@ def TestingClosure(_outdir, _jobs):
         # Add the port only if it's not the default.
         if port != DEFAULT_SERVER_PORT:
           command += [str(port)]
-        command += extra_args
         # Can't use annotator.Run() because the HTTP server doesn't stop, which
         # causes Run() to hang.
         annotator.Print('Starting server: %s' % command)
-        annotator.Print('extra_args=%s' % str(extra_args))
-        current_working_dir = path if alternate_cwd is None else alternate_cwd
-        annotator.Print('cwd=%s' % current_working_dir)
         process = subprocess.Popen(command,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT,
-                                   cwd=current_working_dir)
+                                   cwd=path)
         self.assertNotEqual(None, process)
         # Wait until the process starts by trying to send it a GET request until
         # the server responds, or until the timeout expires.  If the timeout
@@ -187,17 +142,6 @@ def TestingClosure(_outdir, _jobs):
             conn = None
             time.sleep(1)  # Wait a second to try again.
           time_now = time.time()
-
-        # If we expect the test to fail (e.g. bad directory without
-        # --no_dir_check) then there should be no connection.
-        if should_fail:
-          self.assertEqual(None, conn)
-          return_code = process.poll()
-          # If the process has not terminated, return_code will be None
-          # but since the server should have failed to launch, it should
-          # have terminated by now.
-          self.assertNotEqual(return_code, None)
-          return
 
         self.assertNotEqual(None, conn)
         # Validate the first line of the startup banner.  An example of the
@@ -225,16 +169,7 @@ def TestingClosure(_outdir, _jobs):
 
       runAndQuitHttpServer()
       runAndQuitHttpServer(5280)
-      # Make sure server works outside examles with --no_dir_check.
-      runAndQuitHttpServer(5281, alternate_cwd=_outdir,
-        extra_args=['--no_dir_check'])
-      # Make sure it works in examples with --no_dir_check.
-      runAndQuitHttpServer(5281, extra_args=['--no_dir_check'])
-      # Make sure the test fails if --no_dir_check is left out and the CWD
-      # is not examples.
-      runAndQuitHttpServer(5281, alternate_cwd=_outdir, should_fail=True)
-      # Retest port 5281 with the default parameters.
-      runAndQuitHttpServer(5281)
+
 
     def testProjectTemplates(self):
       '''Create and build projects from project_templates.'''
@@ -250,6 +185,7 @@ def TestingClosure(_outdir, _jobs):
               can be empty.
         '''
         path = os.path.join(_outdir, 'project_templates')
+        scons = 'scons.bat' if sys.platform == 'win32' else 'scons'
         scons_command = [os.path.join(path, project_name, scons), '-j', _jobs]
         init_project_command = [sys.executable,
                                 'init_project.py',
@@ -276,8 +212,8 @@ def TestingClosure(_outdir, _jobs):
     def testValgrind(self):
       '''Verify that Valgrind works properly (Linux 64-bit only)'''
 
-      bit_widths = build_utils.SupportedNexeBitWidths()
-      if (not sys.platform.startswith('linux')) or (64 not in bit_widths):
+      if (sys.platform not in ['linux', 'linux2'] or
+          platform.machine() != 'x86_64'):
         annotator.Print('Not running on 64-bit Linux -- skip')
         return
       true_basename = os.path.join(_outdir, 'true')
@@ -289,16 +225,12 @@ def TestingClosure(_outdir, _jobs):
                      '-Wl,-u,have_nacl_valgrind_interceptors', '-g',
                      true_c_filename, '-lvalgrind'])
       memcheck = os.path.join(_outdir, 'third_party', 'valgrind', 'memcheck.sh')
-      annotator.Run([memcheck, sel_ldr64,
-                     # The -B flag is needed by sel_ldr to find an Integrated
-                     # Runtime that it can use to run .nexes.
-                     '-B', irt_core64,
-                     '-Q', true_nexe_filename])
+      annotator.Run([memcheck, sel_ldr64, '-Q', true_nexe_filename])
 
   return TestSDK
 
 
-def ExtractInstaller(installer, outdir, bundle_name):
+def ExtractInstaller(installer, outdir):
   '''Extract the SDK installer into a given directory
 
   If the outdir already exists, then this function deletes it
@@ -306,7 +238,6 @@ def ExtractInstaller(installer, outdir, bundle_name):
   Args:
     installer: full path of the SDK installer
     outdir: output directory where to extract the installer
-    bundle_name: name of sdk bundle within outdir
 
   Raises:
     OSError - if the outdir already exists
@@ -318,33 +249,17 @@ def ExtractInstaller(installer, outdir, bundle_name):
   if os.path.exists(outdir):
     RemoveDir(outdir)
 
-  os.mkdir(outdir)
+  if sys.platform == 'win32':
+    # Run the self-extracting installer in silent mode with a specified
+    # output directory
+    command = [installer, '/S', '/D=%s' % outdir]
+  else:
+    os.mkdir(outdir)
+    command = ['tar', '-C', outdir, '--strip-components=1',
+               '-xvzf', installer]
 
-  manifest_filename = os.path.join(os.path.abspath(outdir),
-                                   'test_manifest.json')
-  update_manifest_options = [
-       '--bundle-revision=1',
-       '--description=installer_test bundle',
-       '--%s-archive=file://%s' % (
-           sdk_update.GetHostOS(),
-           urllib.pathname2url(os.path.abspath(installer))),
-       '--bundle-name=%s' % bundle_name,
-       '--recommended=yes',
-       '--stability=stable',
-       '--manifest-version=1',
-       manifest_filename]
-  annotator.Print('Running update manifest with %s' % update_manifest_options)
-  if 0 != update_manifest.main(update_manifest_options):
-    raise Exception('update_manifest terminated abnormally.')
-
-  sdk_update_options = [
-      '--manifest-url=file://%s' % urllib.pathname2url(manifest_filename),
-      '--sdk-root-dir=%s' % outdir,
-      '--user-data-dir=%s' % outdir,
-      'update']
-  annotator.Print('Running sdk_update with %s' % sdk_update_options)
-  if 0 != sdk_update.main(sdk_update_options):
-    raise Exception('sdk_update terminated abnormally.')
+  annotator.Print('Running command: %s' % command)
+  subprocess.check_call(command)
 
 
 def RemoveDir(outdir):
@@ -380,7 +295,6 @@ def main():
   Also, raises various exceptions for error conditions.
   '''
 
-  BUNDLE_NAME = 'test_sdk_bundle'
   parser = optparse.OptionParser(
       usage='Usage: %prog [options] sdk_installer')
   parser.add_option(
@@ -403,10 +317,10 @@ def main():
 
   annotator.Print("Running with installer = %s, outdir = %s, jobs = %s" % (
                   installer, outdir, options.jobs))
-  ExtractInstaller(installer, outdir, BUNDLE_NAME)
+  ExtractInstaller(installer, outdir)
 
   suite = unittest.TestLoader().loadTestsFromTestCase(
-      TestingClosure(os.path.join(outdir, BUNDLE_NAME), options.jobs))
+      TestingClosure(outdir, options.jobs))
   result = unittest.TextTestRunner(verbosity=2).run(suite)
 
   RemoveDir(outdir)

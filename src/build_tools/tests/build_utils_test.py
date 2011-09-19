@@ -8,11 +8,8 @@
 
 __author__ = 'mball@google.com (Matt Ball)'
 
-import platform
-import os
 import subprocess
 import sys
-import tarfile
 import unittest
 
 from build_tools import build_utils
@@ -23,23 +20,6 @@ class TestBuildUtils(unittest.TestCase):
   """This class tests basic functionality of the build_utils package"""
   def setUp(self):
     self.mock_factory = mox.Mox()
-
-  def testArchitecture(self):
-    """Testing the Architecture function"""
-    bit_widths = build_utils.SupportedNexeBitWidths()
-    # Make sure word-width of either 32 or 64.
-    self.assertTrue(32 in bit_widths or 64 in bit_widths)
-    if sys.platform in ['linux', 'linux2']:
-      self.assertTrue(32 in bit_widths)
-      if '64' in platform.machine():
-        self.assertTrue(64 in bit_widths)
-    elif sys.platform == 'darwin':
-      # Mac should have both 32- and 64-bit support.
-      self.assertTrue(32 in bit_widths)
-      self.assertTrue(64 in bit_widths)
-    else:
-      # Windows supports either 32- or 64-bit, but not both.
-      self.assertEqual(1, len(bit_widths))
 
   def testBotAnnotatorPrint(self):
     """Testing the Print function of the BotAnnotator class"""
@@ -75,24 +55,6 @@ class TestBuildUtils(unittest.TestCase):
     self.assertEqual(run_output, "%s" % out_string)
     self.assertRaises(subprocess.CalledProcessError, bot.Run, error_command)
     self.mock_factory.VerifyAll()
-
-  def testJoinPathToNaClRepo(self):
-    """Testing the 'JoinPathToNaClRepo' utility function."""
-    # Test an empty arg list.
-    test_dir = os.path.join('third_party', 'native_client')
-    self.assertEqual(test_dir, build_utils.JoinPathToNaClRepo())
-    # Test an empty arg list with just the root_dir key set.
-    test_dir = os.path.join('test_root', test_dir)
-    self.assertEqual(test_dir,
-                     build_utils.JoinPathToNaClRepo(root_dir='test_root'))
-    # Test non-empty arg lists and with and without root_dir.
-    test_dir = os.path.join('third_party', 'native_client', 'testing', 'file')
-    self.assertEqual(test_dir,
-                     build_utils.JoinPathToNaClRepo('testing', 'file'))
-    test_dir = os.path.join('test_root', test_dir)
-    self.assertEqual(test_dir,
-        build_utils.JoinPathToNaClRepo('testing', 'file', root_dir='test_root'))
-
 
 def RunTests():
   suite = unittest.TestLoader().loadTestsFromTestCase(TestBuildUtils)

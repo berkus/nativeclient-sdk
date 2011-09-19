@@ -1,20 +1,15 @@
-﻿// Copyright (c) 2011 The Native Client Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style license that can be
-// found in the LICENSE file.
-
-#region
-
+﻿// Copyright 2009 The Native Client Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can
+// be found in the LICENSE file.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using NaClVsx;
 
-#endregion
-
 namespace Google.NaClVsx.DebugSupport.DWARF {
   /// <summary>
-  ///   The interface implemented by this class lives in
-  ///   NaClVsx.DebugHelpers/DwarfParser.h
+  /// The interface implemented by this class lives in
+  /// NaClVsx.DebugHelpers->Header Files->DwarfParser.h
   /// </summary>
   class DwarfReaderImpl : IDwarfReader {
     public DwarfReaderImpl(SymbolDatabase db) {
@@ -44,7 +39,7 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
     }
 
     public void EndDIE(ulong offset) {
-      var entry = db_.Entries[offset];
+      DebugInfoEntry entry = db_.Entries[offset];
 
       // If this DIE is a scope, it should at this point be at the top of the
       // scope stack.
@@ -60,8 +55,8 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
         if (entry.Attributes.TryGetValue(
             DwarfAttribute.DW_AT_high_pc, out highpc)) {
           if (db_.ScopeTransitions.ContainsKey((ulong) highpc)) {
-            // This can happen if a parent and child scope end on the same pc
-            // value.  The parent wins, so overwrite the previous entry.
+            // This can happen if a parent and child scope end on the same pc value.
+            // The parent wins, so overwrite the previous entry.
             db_.ScopeTransitions[(ulong) highpc].Entry = entry.OuterScope;
           } else {
             db_.ScopeTransitions.Add(
@@ -79,9 +74,9 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
                                  ulong parent,
                                  DwarfAttribute attr,
                                  object data) {
-      var entry = db_.Entries[offset];
+      DebugInfoEntry entry = db_.Entries[offset];
 
-      var key = attributeIndex_++;
+      ulong key = attributeIndex_++;
       db_.Attributes.Add(
           key,
           new SymbolDatabase.DebugInfoAttribute {
@@ -94,6 +89,7 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
 
 
       // If we have a PC range, it's time to make a new scope
+      //
       if (attr == DwarfAttribute.DW_AT_low_pc) {
         var addr = (ulong) data;
 
@@ -101,6 +97,7 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
         // Replace any existing scope transition at the point where  
         // this entry starts. Existing transitions are expected--it 
         // just means that this entry starts where its sibling ends.
+        //
         if (db_.ScopeTransitions.ContainsKey(addr)) {
           db_.ScopeTransitions[addr].Entry = entry;
         } else {
@@ -111,20 +108,7 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
                   Entry = entry
               });
         }
-        // This entry may already be on the scope track if it has low_pc and
-        // ranges.
-        if (scopeStack_.PeekOrDefault() != entry) {
-          scopeStack_.Push(db_.Entries[parent]);
-        }
-      } else if (attr == DwarfAttribute.DW_AT_ranges) {
-        // We can't make the scope transition because ranges are parsed on a
-        // different code path, so we'll handle it during a post-processing
-        // step.
-        // This entry may already be on the scope track if it has low_pc as
-        // well as ranges.
-        if (scopeStack_.PeekOrDefault() != entry) {
-          scopeStack_.Push(db_.Entries[parent]);
-        }
+        scopeStack_.Push(db_.Entries[parent]);
       }
     }
 
@@ -140,7 +124,7 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
     public void DefineFile(string name,
                            int fileNum,
                            uint dirNum) {
-      var key = MakeFileKey((uint) fileNum);
+      ulong key = MakeFileKey((uint) fileNum);
       string relpath;
       if (!dirs_.TryGetValue(dirNum, out relpath)) {
         relpath = "";
@@ -200,7 +184,7 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
         currentLocList_ = offset;
         db_.LocLists.Add(offset, new List<SymbolDatabase.LocListEntry>());
       }
-      var list = db_.LocLists[currentLocList_];
+      List<SymbolDatabase.LocListEntry> list = db_.LocLists[currentLocList_];
       list.Add(
           new SymbolDatabase.LocListEntry {
               StartAddress = lowPc,
@@ -240,26 +224,6 @@ namespace Google.NaClVsx.DebugSupport.DWARF {
 
       currentFrame_ = null;
       return true;
-    }
-
-    public void AddRangeListEntry(ulong offset,
-                                  ulong baseAddress,
-                                  ulong lowPC,
-                                  ulong highPC) {
-      if (lowPC != highPC) {
-        if (!db_.RangeLists.ContainsKey(offset)) {
-          db_.RangeLists.Add(offset, new Dictionary<ulong, RangeListEntry>());
-        }
-        if (!db_.RangeLists[offset].ContainsKey(lowPC)) {
-          var entry = new RangeListEntry {
-              Offset = offset,
-              BaseAddress = baseAddress,
-              LowPC = lowPC,
-              HighPC = highPC
-          };
-          db_.RangeLists[offset].Add(lowPC, entry);
-        }
-      }
     }
 
     private ulong MakeFileKey(uint fileNum) {

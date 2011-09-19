@@ -5,25 +5,22 @@
 #ifndef SCOPED_PIXEL_LOCK_H_
 #define SCOPED_PIXEL_LOCK_H_
 
-#include <tr1/memory>
-#include "experimental/conways_life/locking_image_data.h"
-
 namespace life {
+
+class LockingImageData;
 
 // A small helper RAII class used to acquire and release the pixel lock based
 // on C++ scoping rules.
 class ScopedPixelLock {
  public:
-  explicit ScopedPixelLock(
-      const std::tr1::shared_ptr<LockingImageData>& pixel_owner)
+  explicit ScopedPixelLock(LockingImageData* pixel_owner)
       : pixel_owner_(pixel_owner) {
-    pixels_ = pixel_owner_ == NULL ? NULL : pixel_owner->LockPixels();
+    pixels_ = pixel_owner->LockPixels();
   }
 
   ~ScopedPixelLock() {
     pixels_ = NULL;
-    if (pixel_owner_ != NULL)
-      pixel_owner_->UnlockPixels();
+    pixel_owner_->UnlockPixels();
   }
 
   bool is_valid() const {
@@ -35,7 +32,7 @@ class ScopedPixelLock {
   }
 
  private:
-  std::tr1::shared_ptr<LockingImageData> pixel_owner_;
+  LockingImageData* pixel_owner_;  // Weak reference.
   uint32_t* pixels_;  // Weak reference.
 };
 }  // namespace life

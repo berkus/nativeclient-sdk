@@ -1,7 +1,7 @@
 // Copyright (c) 2011 The Native Client Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-#include "debug_blob.h"
+#include "linux_oop_debugger/debug_blob.h"
 #include <ctype.h>
 #include <string.h>
 #include <algorithm>

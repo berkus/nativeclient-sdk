@@ -160,11 +160,11 @@ static void Instance_DidChangeView(PP_Instance instance,
  * will not have focus.
  *
  * Note: clicks on NaCl modules will give focus only if you handle the
- * click event. You signal if you handled it by returning @a true from
- * HandleInputEvent. Otherwise the browser will bubble the event and give
- * focus to the element on the page that actually did end up consuming it.
- * If you're not getting focus, check to make sure you're returning true from
- * the mouse click in HandleInputEvent.
+ * click event. You signal if you handled it by returning @a PP_TRUE from
+ * PPP_InputEvent.HandleInputEvent. Otherwise the browser will bubble the event
+ * and give focus to the element on the page that actually did end up consuming
+ * it. If you're not getting focus, check to make sure you're returning
+ * @a PP_TRUE from the mouse click in PPP_InputEvent.HandleInputEvent.
  * @param[in] instance The identifier of the instance representing this NaCl
  *     module.
  * @param[in] has_focus Indicates whether this NaCl module gained or lost

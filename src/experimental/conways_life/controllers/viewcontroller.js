@@ -283,8 +283,7 @@ life.controllers.ViewController.prototype.handleStartDrag_ =
 };
 
 /**
- * Handle the DRAG event: add a cell at the event's coordinates.  If the
- * event goes outside of the drawing area, clip it.
+ * Handle the DRAG event: add a cell at the event's coordinates.
  * @param {!goog.fx.DragEvent} dragEvent The DRAG event that triggered this
  *     handler.
  * @private
@@ -305,4 +304,19 @@ life.controllers.ViewController.prototype.handleDrag_ = function(dragEvent) {
 life.controllers.ViewController.prototype.handleEndDrag_ =
     function(dragEndEvent) {
   dragEndEvent.stopPropagation();
+};
+
+/**
+ * Handle keyboard shortcut events.  These get transformed into Ginsu app
+ * events and re-dispatched.
+ * @param {!goog.ui.KeyboardShortcutEvent} keyboardEvent The SHORTCUT event
+ * that triggered this handler.
+ * @private
+ */
+life.controllers.ViewController.prototype.handleKeyboard_ =
+    function(keyboardEvent) {
+  var eventClone = goog.object.clone(keyboardEvent);
+  keyboardEvent.stopPropagation();
+  this.dispatchEvent(new life.events.Event(life.events.EventType.ACTION, this,
+      keyboardEvent.identifier));
 };

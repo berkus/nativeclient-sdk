@@ -35,7 +35,6 @@ Supported targets:
   * load_progress      Build the load_progress example.
   * pi_generator       Build the pi_generator example.
   * sine_synth         Build the sine_synth example.
-  * tumbler            Build the tumbler example.
 """
 
 example_sconscripts = ['geturl/build.scons',
@@ -44,7 +43,6 @@ example_sconscripts = ['geturl/build.scons',
                        'load_progress/build.scons',
                        'pi_generator/build.scons',
                        'sine_synth/build.scons',
-                       'tumbler/build.scons',
                       ]
 
 Help(HELP_STRING)

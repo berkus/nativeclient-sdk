@@ -7,7 +7,6 @@
 
 import build_utils
 import installer_contents
-import make_nsis_installer
 import optparse
 import os
 import shutil
@@ -15,13 +14,38 @@ import stat
 import string
 import subprocess
 import sys
-import tar_archive
 
 IGNORE_PATTERN = ('.download*', '.svn*')
+
+# These are extra files that are exclusive to the Windows installer.
+EXTRA_WINDOWS_INSTALLER_CONTENTS = [
+    'examples/httpd.cmd',
+    'examples/scons.bat',
+    'project_templates/scons.bat',
+    'toolchain/',
+]
 
 def main(argv):
   bot = build_utils.BotAnnotator()
   bot.Print('generate_windows_installer is starting.')
+
+  parser = optparse.OptionParser()
+  parser.add_option(
+      '--development', action='store_true', dest='development',
+      default=False,
+      help=('When set, the script will forego cleanup actions that can slow ' +
+            'down subsequent runs.  Useful for testing.  Defaults to False.'))
+  parser.add_option(
+      '-j', '--jobs', dest='jobs', default='1',
+      help='Number of parallel jobs to use while building')
+  (options, args) = parser.parse_args(argv)
+  if args:
+    parser.print_help()
+    bot.Print('ERROR: invalid argument')
+    sys.exit(1)
+
+  if(options.development):
+    bot.Print('Running in development mode.')
 
   # Make sure that we are running python version 2.6 or higher
   (major, minor) = sys.version_info[:2]
@@ -30,6 +54,12 @@ def main(argv):
   # temporary dirs.
   script_dir = os.path.abspath(os.path.dirname(__file__))
   home_dir = os.path.realpath(os.path.dirname(os.path.dirname(script_dir)))
+
+  cygwin_dir = os.path.join(home_dir,
+                            'src',
+                            'third_party',
+                            'cygwin',
+                            'bin')
 
   version_dir = build_utils.VersionString()
   parent_dir = os.path.dirname(script_dir)
@@ -51,21 +81,12 @@ def main(argv):
   bot.BuildStep('build examples')
   bot.Print('generate_windows_installer is building examples.')
   example_path = os.path.join(home_dir, 'src', 'examples')
+  # Make sure the examples are clened out before creating the prebuilt
+  # artifacts.
   scons_path = os.path.join(example_path, 'scons.bat')
-  # TODO(dspringer): Change --nacl-platform='.' to --nacl-platform='pepper_14'
-  # when supported.
-  scons_cmd = scons_path + ' --nacl-platform="." install_prebuilt'
-  subprocess.check_call(scons_cmd, cwd=example_path)
-
-  # Build the experimental projects.
-  bot.BuildStep('build experimental')
-  bot.Print('generate_windows_installer is building the experimental projects.')
-  experimental_path = os.path.join(home_dir, 'src', 'experimental')
-  scons_path = os.path.join(experimental_path, 'scons.bat')
-  # TODO(dspringer): Change --nacl-platform='.' to --nacl-platform='pepper_14'
-  # when supported.
-  scons_cmd = scons_path + ' --nacl-platform="."'
-  subprocess.check_call(scons_cmd, cwd=experimental_path)
+  subprocess.check_call([scons_path, '-c',
+                        'install_prebuilt'], cwd=example_path)
+  subprocess.check_call([scons_path, 'install_prebuilt'], cwd=example_path)
 
   # On windows we use copytree to copy the SDK into the build location
   # because there is no native tar and using cygwin's version has proven
@@ -78,7 +99,7 @@ def main(argv):
   shutil.rmtree(installer_dir)
   bot.Print('generate_windows_installer: copying files to install directory.')
   all_contents = installer_contents.INSTALLER_CONTENTS + \
-                 installer_contents.WINDOWS_ONLY_CONTENTS
+                 EXTRA_WINDOWS_INSTALLER_CONTENTS
   for copy_source_dir in installer_contents.GetDirectoriesFromPathList(
       all_contents):
     copy_target_dir = os.path.join(installer_dir, copy_source_dir)
@@ -112,46 +133,49 @@ def main(argv):
 
   # Make everything read/write (windows needs this).
   for root, dirs, files in os.walk(installer_dir):
-    def UpdatePermissions(list):
-      for file in map(lambda f: os.path.join(root, f), list):
-        os.chmod(file, os.lstat(file).st_mode | stat.S_IWRITE | stat.S_IREAD)
-    UpdatePermissions(dirs)
-    UpdatePermissions(files)
+    for d in dirs:
+      os.chmod(os.path.join(root, d), stat.S_IWRITE | stat.S_IREAD)
+    for f in files:
+      os.chmod(os.path.join(root, f), stat.S_IWRITE | stat.S_IREAD)
 
-  # Grab the toolchain manifest files and massage them so their paths are
-  # corrected for the actual toolchain layout in the SDK.  The newlib toolchain
-  # manifest has these changes made:
-  #  1. Transform path components 'sdk/nacl-sdk' to 'toolchain/win_x86_newlib'
-  #  2. Remove the spurious 'sdk' directory entry.
-  # The glibc manifests can be used unmolested.
-  bot.BuildStep('generate toolchain manifests')
-  def TransformNewlibPath(npath):
-    return os.path.normpath(npath.replace('sdk/nacl-sdk',
-                                          'toolchain/win_x86_newlib'))
-  newlib_manifest = tar_archive.TarArchive()
-  newlib_manifest.path_filter = TransformNewlibPath
-  newlib_manifest_path = os.path.join(
-      home_dir,
-      'src',
-      installer_contents.GetToolchainManifest('newlib'))
-  newlib_manifest.InitWithManifest(newlib_manifest_path)
-  newlib_manifest.dirs.discard('sdk')
+  bot.BuildStep('create archive')
+  bot.Print('generate_windows_installer is creating the installer archive')
+  # Now that the SDK directory is copied and cleaned out, tar it all up using
+  # the native platform tar.
 
-  glibc_manifest_path = os.path.join(
-      home_dir,
-      'src',
-      installer_contents.GetToolchainManifest('glibc'))
-  glibc_manifest = tar_archive.TarArchive()
-  glibc_manifest.InitWithManifest(glibc_manifest_path)
+  # Set the default shell command and output name.
+  ar_cmd = ('tar cvzf %(ar_name)s %(input)s && cp %(ar_name)s %(output)s'
+            ' && chmod 644 %(output)s')
+  ar_name = 'nacl-sdk.tgz'
 
-  # Merge the newlib and glibc manifests and send them to the script generator.
+  cygwin_env = os.environ.copy()
+  # TODO (mlinck, mball) make this unnecessary
+  cygwin_env['PATH'] = cygwin_dir + ';' + cygwin_env['PATH']
+  # archive will be created in src\build_tools\pacakges,
+  # make_native_client_sdk.sh will create the real nacl-sdk.exe
+  archive = os.path.join(home_dir, 'src', 'build_tools', 'packages', ar_name)
+  subprocess.check_call(
+      ar_cmd % (
+           {'ar_name':ar_name,
+            'input':version_dir,
+            'output':archive.replace('\\', '/')}),
+      cwd=temp_dir,
+      env=cygwin_env,
+      shell=True)
+
   bot.BuildStep('create Windows installer')
   bot.Print('generate_windows_installer is creating the windows installer.')
   build_tools_dir = os.path.join(home_dir, 'src', 'build_tools')
-  make_nsis_installer.MakeNsisInstaller(
-      installer_dir,
-      cwd=build_tools_dir,
-      toolchain_manifests=newlib_manifest | glibc_manifest)
+  # Do not check the return value of this call, because it always fails on the
+  # try bots.  The try bots always patch using the native line ending, which
+  # appends CRLF to the line endings of the make_native_client_sdk.sh script,
+  # and bash cannot deal with CRLF line endings.  The shell script runs fine
+  # on the build bots.
+  subprocess.call([
+      os.path.join(cygwin_dir, 'bash.exe'),
+      'make_native_client_sdk.sh', '-V',
+      build_utils.RawVersion(), '-v', '-n'],
+      cwd=build_tools_dir)
   bot.Print("Installer created!")
 
   # Clean up.

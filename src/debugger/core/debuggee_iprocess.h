@@ -31,10 +31,6 @@ class IDebuggeeProcess {
   IDebuggeeProcess() {}
   virtual ~IDebuggeeProcess() {}
 
-  /// If enabled, it decrements IP after hitting breakpoint.
-  virtual void EnableCompatibilityMode() = 0;
-  virtual bool compatibility_mode() const = 0;
-
   /// @return id of the process
   virtual int id() const = 0;
 

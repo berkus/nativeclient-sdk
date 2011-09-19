@@ -1,12 +1,8 @@
-﻿#region
-
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Drawing.Design;
 using System.Runtime.InteropServices;
 using System.Windows.Forms.Design;
-
-#endregion
 
 namespace Google.NaClVsx.ProjectSupport {
   public enum TargetArchitecture {
@@ -58,47 +54,18 @@ namespace Google.NaClVsx.ProjectSupport {
     }
 
     [Category("Compiler")]
-    [DisplayName("CCFLAGS")]
-    [ProjectProperty("CCFLAGS", true)]
-    [Description(
-        "CCFLAGS: passed on to nacl-gcc or nacl-g++"
-        )]
-    public string CCFLAGS {
-      get { return naclCcFlags_; }
-      set {
-        naclCcFlags_ = value;
-        IsDirty = true;
-      }
-    }
-
-    [Category("Compiler")]
     [DisplayName("CFLAGS")]
     [ProjectProperty("CFLAGS", true)]
     [Description(
-        "CFLAGS: passed on to nacl-gcc (not nacl-g++)"
+        "CFLAGS: passed on to nacl-gcc or nacl-g++"
         )]
     public string CFLAGS {
-      get { return naclCFlags_; }
+      get { return naclCflags_; }
       set {
-        naclCFlags_ = value;
+        naclCflags_ = value;
         IsDirty = true;
       }
     }
-
-    [Category("Compiler")]
-    [DisplayName("CXXFLAGS")]
-    [ProjectProperty("CXXFLAGS", true)]
-    [Description(
-        "CXXFLAGS: passed on to nacl-g++ (not nacl-gcc)"
-        )]
-    public string CXXFLAGS {
-      get { return naclCxxFlags_; }
-      set {
-        naclCxxFlags_ = value;
-        IsDirty = true;
-      }
-    }
-
 
     [Category("Compiler")]
     [DisplayName("INCLUDES")]
@@ -106,9 +73,11 @@ namespace Google.NaClVsx.ProjectSupport {
     [Description(
         "Include Paths: passed on to nacl-gcc or nacl-g++"
         )]
-    public string INCLUDES {
+    public string INCLUDES
+    {
       get { return naclIncludes_; }
-      set {
+      set
+      {
         naclIncludes_ = value;
         IsDirty = true;
       }
@@ -120,9 +89,11 @@ namespace Google.NaClVsx.ProjectSupport {
     [Description(
         "Optimization flags (such as -O2): passed on to nacl-gcc or nacl-g++"
         )]
-    public string OPT_FLAGS {
+    public string OPT_FLAGS
+    {
       get { return naclOptFlags_; }
-      set {
+      set
+      {
         naclOptFlags_ = value;
         IsDirty = true;
       }
@@ -199,35 +170,18 @@ namespace Google.NaClVsx.ProjectSupport {
       }
     }
 
-    [Category("Toolchain")]
-    [DisplayName("Toolchain")]
-    [ProjectProperty("Toolchain", true)]
-    [Description(
-        "The toolchain to use in the build (e.g. win_x86_newlib)."
-        )]
-    public string Toolchain {
-      get { return toolchain_; }
-      set
-      {
-        toolchain_ = value;
-        IsDirty = true;
-      }
-    }
     #region Private Implementation
 
     private TargetArchitecture arch_;
     private string intermediateDir_;
     private string libPath_;
     private string libs_;
-    private string naclCFlags_;
-    private string naclCcFlags_;
-    private string naclCxxFlags_;
-    private string naclIncludes_;
-    private string naclOptFlags_;
     private string naclSdkRoot_;
-    private string toolchain_;
     private string outputDir_;
     private string outputFileName_;
+    private string naclCflags_;
+    private string naclIncludes_;
+    private string naclOptFlags_;
 
     #endregion
   }

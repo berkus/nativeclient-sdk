@@ -38,30 +38,6 @@ struct MyCONTEXT_x86 {
     BYTE    ExtendedRegisters[MAXIMUM_SUPPORTED_EXTENSION];
 };
 
-struct DECLSPEC_ALIGN(16) MyM128A {
-    ULONGLONG Low;
-    LONGLONG High;
-};
-
-struct DECLSPEC_ALIGN(16) MyXSAVE_FORMAT {
-    WORD   ControlWord;
-    WORD   StatusWord;
-    BYTE  TagWord;
-    BYTE  Reserved1;
-    WORD   ErrorOpcode;
-    DWORD ErrorOffset;
-    WORD   ErrorSelector;
-    WORD   Reserved2;
-    DWORD DataOffset;
-    WORD   DataSelector;
-    WORD   Reserved3;
-    DWORD MxCsr;
-    DWORD MxCsr_Mask;
-    MyM128A FloatRegisters[8];
-    MyM128A XmmRegisters[16];
-    BYTE  Reserved4[96];
-};
-
 struct DECLSPEC_ALIGN(16) MyCONTEXT_x86_64 {
     DWORD64 P1Home;
     DWORD64 P2Home;
@@ -102,29 +78,29 @@ struct DECLSPEC_ALIGN(16) MyCONTEXT_x86_64 {
     DWORD64 R15;
     DWORD64 Rip;
     union {
-        MyXSAVE_FORMAT FltSave;
+        XSAVE_FORMAT FltSave;
         struct {
-            MyM128A Header[2];
-            MyM128A Legacy[8];
-            MyM128A Xmm0;
-            MyM128A Xmm1;
-            MyM128A Xmm2;
-            MyM128A Xmm3;
-            MyM128A Xmm4;
-            MyM128A Xmm5;
-            MyM128A Xmm6;
-            MyM128A Xmm7;
-            MyM128A Xmm8;
-            MyM128A Xmm9;
-            MyM128A Xmm10;
-            MyM128A Xmm11;
-            MyM128A Xmm12;
-            MyM128A Xmm13;
-            MyM128A Xmm14;
-            MyM128A Xmm15;
+            M128A Header[2];
+            M128A Legacy[8];
+            M128A Xmm0;
+            M128A Xmm1;
+            M128A Xmm2;
+            M128A Xmm3;
+            M128A Xmm4;
+            M128A Xmm5;
+            M128A Xmm6;
+            M128A Xmm7;
+            M128A Xmm8;
+            M128A Xmm9;
+            M128A Xmm10;
+            M128A Xmm11;
+            M128A Xmm12;
+            M128A Xmm13;
+            M128A Xmm14;
+            M128A Xmm15;
         } DUMMYSTRUCTNAME;
     } DUMMYUNIONNAME;
-    MyM128A VectorRegister[26];
+    M128A VectorRegister[26];
     DWORD64 VectorControl;
     DWORD64 DebugControl;
     DWORD64 LastBranchToRip;
@@ -144,8 +120,8 @@ struct GdbRegisters64 {
   REG(64, rdx);
   REG(64, rsi);
   REG(64, rdi);
-  REG(64, bp);
-  REG(64, sp);
+  REG(64, rbp);
+  REG(64, rsp);
   REG(64, r8);
   REG(64, r9);
   REG(64, r10);
@@ -169,8 +145,8 @@ struct GdbRegisters32 {
   REG(32, ecx);
   REG(32, edx);
   REG(32, ebx);
-  REG(32, sp);
-  REG(32, bp);
+  REG(32, esp);
+  REG(32, ebp);
   REG(32, esi);
   REG(32, edi);
   REG(32, ip);
@@ -219,8 +195,8 @@ void RegistersSet::InitializeForWin64() {
   MAP_REG(rdx, Rdx);
   MAP_REG(rsi, Rsi);
   MAP_REG(rdi, Rdi);
-  MAP_REG(bp, Rbp);
-  MAP_REG(sp, Rsp);
+  MAP_REG(rbp, Rbp);
+  MAP_REG(rsp, Rsp);
   MAP_REG(r8, R8);
   MAP_REG(r9, R9);
   MAP_REG(r10, R10);
@@ -257,8 +233,8 @@ void RegistersSet::InitializeForWin32() {
   MAP_REG(ecx, Ecx);
   MAP_REG(edx, Edx);
   MAP_REG(ebx, Ebx);
-  MAP_REG(sp, Esp);
-  MAP_REG(bp, Ebp);
+  MAP_REG(esp, Esp);
+  MAP_REG(ebp, Ebp);
   MAP_REG(esi, Esi);
   MAP_REG(edi, Edi);
   MAP_REG(ip, Eip);
@@ -297,32 +273,6 @@ bool RegistersSet::ReadRegisterFromGdbBlob(const debug::Blob& blob,
   if (NULL == register_info)
     return false;
   return ReadRegisterFromGdbBlob(blob, *register_info, destination);
-}
-
-bool RegistersSet::WriteRegisterToGdbBlob(const std::string& register_name,
-                                          uint64_t value,
-                                          debug::Blob* destination_blob) const {
-  const RegisterDescription* register_info =
-      FindRegisterDescription(register_name);
-  if (NULL == register_info)
-    return false;
-  WriteRegisterToGdbBlob(*register_info, value, destination_blob);
-  return true;
-}
-
-void RegistersSet::WriteRegisterToGdbBlob(
-    const RegisterDescription& register_info,
-    uint64_t value,
-    debug::Blob* destination_blob) const {
-  size_t offs = register_info.gdb_offset_;
-  size_t size = register_info.gdb_size_;
-  while ((offs + size) > destination_blob->size())
-    destination_blob->PushBack(0);
-
-  uint8_t* src = reinterpret_cast<uint8_t*>(&value);
-  for (size_t i = 0; i < size; i++) {
-    (*destination_blob)[offs + i] = *src++;
-  }
 }
 
 }  // namespace debug

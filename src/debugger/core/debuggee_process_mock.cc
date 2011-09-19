@@ -9,8 +9,7 @@ DebuggeeProcessMock::DebuggeeProcessMock(DebugAPI* debug_api)
     : debug_api_(debug_api),
       nexe_mem_base_(NULL),
       nexe_entry_point_(NULL),
-      state_(kHalted),
-      compatibility_mode_(false) {
+      state_(kHalted) {
   memset(buff_, kFillChar, sizeof(buff_));
 }
 

@@ -48,13 +48,6 @@ class DebuggeeProcess : public IDebuggeeProcess {
                   DebugAPI* debug_api);
   virtual ~DebuggeeProcess();
 
-  /// If enabled, DebuggeeProcess runs in the mode
-  /// compatible with in-process debug stub:
-  /// it decrements IP after hitting breakpoints
-  void EnableCompatibilityMode() {
-    compatibility_mode_ = true;
-  }
-
   /// @return id of the process
   virtual int id() const { return id_; }
 
@@ -207,10 +200,6 @@ class DebuggeeProcess : public IDebuggeeProcess {
   /// @return flat address
   virtual void* FromNexeToFlatAddress(void* addr) const;
 
-  bool compatibility_mode() const {
-    return compatibility_mode_;
-  }
-
  protected:
   friend class ExecutionEngine;
 
@@ -251,7 +240,6 @@ class DebuggeeProcess : public IDebuggeeProcess {
   std::map<void*, Breakpoint*> breakpoints_;
   void* nexe_mem_base_;
   void* nexe_entry_point_;
-  bool compatibility_mode_;
 
  private:
   DebuggeeProcess(const DebuggeeProcess&);  // DISALLOW_COPY_AND_ASSIGN

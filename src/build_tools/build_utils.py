@@ -11,20 +11,26 @@ import datetime
 import errno
 import fileinput
 import os
-import platform
 import re
 import shutil
 import subprocess
 import sys
-
-from nacl_sdk_scons import nacl_utils
 
 #------------------------------------------------------------------------------
 # Parameters
 
 # Revision numbers for the SDK
 MAJOR_REV = '0'
-MINOR_REV = '6'
+MINOR_REV = '5'
+
+# Map the string stored in |sys.platform| into a toolchain platform specifier.
+PLATFORM_MAPPING = {
+    'win32': 'win_x86',
+    'cygwin': 'win_x86',
+    'linux': 'linux_x86',
+    'linux2': 'linux_x86',
+    'darwin': 'mac_x86',
+}
 
 TOOLCHAIN_AUTODETECT = "AUTODETECT"
 
@@ -54,6 +60,43 @@ def ForceMakeDirs(abs_path, mode=0755):
       print 'ForceMakeDirs(%s, 0%o) FAILED: %s' % (abs_path, mode, os_strerr)
       raise
     pass
+
+
+# Return a shell environment suitable for use by Mac, Linux and Windows.  On
+# Mac and Linux, this is just a copy of os.environ.  On Windows, the PATH
+# variable is extended to include the hermetic cygwin installation.
+# |nacl_sdk_root| should point to the place where the hermetic cygwin was
+# installed, this is typically something like C:/nacl_sdk/src.  If
+# |nacl_sdk_root| is None, then the NACL_SDK_ROOT environment variable is used.
+# if NACL_SDK_ROOT is not set, then the location of this script file is used.
+def GetShellEnvironment(nacl_sdk_root=None):
+  shell_env = os.environ.copy()
+  if (sys.platform == 'win32'):
+    # This adds the assumption that cygwin is installed in the default
+    # location when building the SDK for windows.
+    if nacl_sdk_root is None:
+      toolchain_dir = os.path.dirname(os.path.dirname(
+                                      os.path.abspath(__file__)))
+      nacl_sdk_root = os.getenv('NACL_SDK_ROOT', toolchain_dir)
+    cygwin_dir = os.path.join(nacl_sdk_root, 'third_party', 'cygwin', 'bin')
+    shell_env['PATH'] = cygwin_dir + ';' + shell_env['PATH']
+
+  return shell_env
+
+
+# Return a "normalized" path that will work with both hermetic cygwin and *nix
+# shell environments.  On *nix, this method just returns the original path; on
+# Windows running hermetic cygwin, this alters the path.  |abs_path| must be
+# a fully-qualified absolute path, on Windows it must include the drive letter.
+# |shell_env| describes the environment used by any subprocess (this is
+# normally obtained from GetShellEnvironment()
+# TODO(dspringer,khim): make this work properly for hermetic cygwin (see bug
+# http://code.google.com/p/nativeclient/issues/detail?id=1122)
+def HermeticBuildPath(abs_path, shell_env):
+  if (sys.platform == 'win32'):
+    return abs_path
+
+  return abs_path
 
 
 # patch version 2.6 doesn't work.  Most of our Linux distros use patch 2.6.
@@ -86,61 +129,24 @@ def CheckPatchVersion(shell_env=None):
 # something like "/usr/local/mydir/nacl_sdk/src".  If |base_dir| is None, then
 # the environment variable NACL_SDK_ROOT is used (if it's set).
 # This method assumes that the platform-specific toolchain is found under
-# <base_dir>/toolchain/<platform_variant>.
-def NormalizeToolchain(toolchain=TOOLCHAIN_AUTODETECT,
-                       base_dir=None,
-                       arch=nacl_utils.DEFAULT_TOOLCHAIN_ARCH,
-                       variant=nacl_utils.DEFAULT_TOOLCHAIN_VARIANT):
+# <base_dir>/toolchain/<platform_spec>.
+def NormalizeToolchain(toolchain=TOOLCHAIN_AUTODETECT, base_dir=None):
+  def AutoDetectToolchain(toochain_base):
+    if sys.platform in PLATFORM_MAPPING:
+      return os.path.join(toochain_base,
+                          'toolchain',
+                          PLATFORM_MAPPING[sys.platform])
+    else:
+      print 'ERROR: Unsupported platform "%s"!' % sys.platform
+      return toochain_base
+
   if toolchain == TOOLCHAIN_AUTODETECT:
     if base_dir is None:
       base_dir = os.getenv('NACL_SDK_ROOT', '')
-    normalized_toolchain = nacl_utils.ToolchainPath(base_dir=base_dir,
-                                                    arch=arch,
-                                                    variant=variant)
+    normalized_toolchain = AutoDetectToolchain(base_dir)
   else:
     normalized_toolchain = os.path.abspath(toolchain)
   return normalized_toolchain
-
-
-def SupportedNexeBitWidths():
-  '''Return a list of .nexe bit widths that are supported by the host.
-
-  Each supported bit width means the host can run a .nexe with the corresponding
-  instruction set architecture.  For example, if this function returns the
-  list [32, 64], then the host can run both 32- and 64-bit .nexes.
-
-  Note: on Windows, environment variables are used to determine the host's bit
-  width instead of the |platform| package.  This is because (up until python
-  2.7) the |platform| package returns the bit-width used to build python, not
-  the host's bit width.
-
-  Returns: A list of supported nexe word widths (in bits) supported by the host
-      (typically 32 or 64).  Returns an empty list if the word_width cannot be
-      determined.
-  '''
-  bit_widths = []
-  if sys.platform == 'win32':
-    # On Windows, the best way to detect the word size is to look at these
-    # env vars.  python 2.6 and earlier on Windows (in particular the
-    # python on the Windows bots) generally always say they are 32-bits,
-    # even though the host is 64-bits.  See this thread for more:
-    # http://stackoverflow.com/questions/7164843/
-    #     in-python-how-do-you-determine-whether-the-kernel-is-running-in-\
-    #     32-bit-or-64-bit
-    if ('64' in os.environ.get('PROCESSOR_ARCHITECTURE', '') or
-        '64' in os.environ.get('PROCESSOR_ARCHITEW6432', '')):
-      bit_widths = [64]
-    else:
-      bit_widths = [32]
-  elif sys.platform == 'darwin':
-    # Mac can handle 32- and 64-bit .nexes.
-    bit_widths = [32, 64]
-  else:
-    # Linux 64 can handle both 32- and 64-bit.
-    machine = platform.machine()
-    bit_widths = [32, 64] if '64' in machine else [32]
-
-  return bit_widths
 
 
 def RawVersion():
@@ -181,28 +187,6 @@ def VersionString():
   return 'native_client_sdk_%s' % '_'.join(GetVersionNumbers())
 
 
-def JoinPathToNaClRepo(*args, **kwargs):
-  '''Use os.path.join() to join the argument list to the NaCl repo location.
-
-  Assumes that the Native Client repo is DEPSed into this repo under
-  third_party/native_client.  This has to match the target dirs in the DEPS
-  file.
-
-  If the key 'root_dir' is set, then this path is prepended to the NaCl repo
-  path.
-
-  Args:
-    args: A list of path elements to append to the NaCl repo root.
-    kwargs: If the 'root_dir' key is present, this gets prepended to the
-        final path.
-
-  Return: An OS-native path to the DEPSed in root of the NaCl repo.
-  '''
-  nacl_path = os.path.join('third_party', 'native_client', *args)
-  root_path = kwargs.get('root_dir')
-  return os.path.join(root_path, nacl_path) if root_path else nacl_path
-
-
 class BotAnnotator:
   '''Interface to Bot Annotations
 
@@ -219,10 +203,6 @@ class BotAnnotator:
 
   def BuildStep(self, name):
     self.Print("@@@BUILD_STEP %s@@@" % name)
-
-  def BuildStepFailure(self):
-    '''Signal a failure in the current build step to the annotator'''
-    self.Print("@@@STEP_FAILURE@@@")
 
   def Run(self, *popenargs, **kwargs):
     '''Implements the functionality of subprocess.check_output, but also
@@ -267,18 +247,3 @@ def UpdateReadMe(filename):
   for line in fileinput.input(filename, inplace=1):
     sys.stdout.write(line.replace('${VERSION}', RawVersion())
                      .replace('${DATE}', str(datetime.date.today())))
-
-def CleanDirectory(dir):
-  '''Cleans all the contents of a given directory.
-  This works even when there are Windows Junctions in the directory
-
-  Args:
-    dir: The directory to clean
-  '''
-  if sys.platform != 'win32':
-    shutil.rmtree(dir, ignore_errors=True)
-  else:
-    # Intentionally ignore return value since a directory might be in use.
-    subprocess.call(['rmdir', '/Q', '/S', dir],
-                    env=os.environ.copy(),
-                    shell=True)

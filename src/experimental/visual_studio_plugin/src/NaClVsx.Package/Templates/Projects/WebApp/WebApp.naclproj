@@ -7,22 +7,13 @@
     <RootNamespace>$safeprojectname$</RootNamespace>
     <AssemblyName>$safeprojectname$</AssemblyName>
     <MainFile>WebApp.cc</MainFile>
-    <NaClSDKRoot>$(NACL_SDK_ROOT)</NaClSDKRoot>
     <INCLUDES>-Ic:\src</INCLUDES>
     <OPT_FLAGS></OPT_FLAGS>
-    <CFLAGS>-std=gnu99</CFLAGS>
-    <CCFLAGS>-Wall -Wswitch-enum -pthread -DXP_UNIX --pedantic -Werror -g -D_GNU_SOURCE=1 -D__STDC_FORMAT_MACROS=1 -D_BSD_SOURCE=1 -D_POSIX_C_SOURCE=199506 -D_XOPEN_SOURCE=600</CCFLAGS>    
-    <CXXFLAGS>-std=gnu++98 -Wno-long-long</CXXFLAGS>
-    <Toolchain>win_x86_newlib</Toolchain>
-    <Lib>$(NaClSDKRoot)\toolchain\$(Toolchain)\lib</Lib>
-    <LinkLibs>ppapi;ppapi_cpp</LinkLibs>
-    <LaunchHostname>localhost</LaunchHostname>
+    <CFLAGS>-Wall -Wno-long-long -pthread -DXP_UNIX -Werror -g </CFLAGS>
+    <Lib>$(NaClSDKRoot)\toolchain\win_x86\nacl64\lib</Lib>
+    <LinkLibs>ppapi</LinkLibs>
     <DebugHost>C:\Program Files (x86)\Google\Chrome\Application\chrome.exe</DebugHost>
-    <DebugArgs>--enable-file-cookies --dom-automation --disable-web-resources --disable-preconnect --no-first-run --no-default-browser-check --enable-logging --safebrowsing-disable-auto-update --no-default-browser-check --noerrdialogs --metrics-recording-only --enable-logging --allow-file-access-from-files --allow-file-access --unlimited-quota-for-files --enable-nacl --enable-nacl-debug --no-sandbox --log-level=3 --incognito</DebugArgs>
-    <LaunchPort>5103</LaunchPort>
-    <HtmlPage>$safeprojectname$.html</HtmlPage>
-    <WebServer>$(NaClSDKRoot)\examples\httpd.cmd</WebServer>
-    <WebServerArgs>--no_dir_check</WebServerArgs>
+    <HtmlPage>stub.html</HtmlPage>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
@@ -36,9 +27,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="$safeprojectname$.cpp" />
-    <Content Include="$safeprojectname$.html" />
-    <Content Include="$safeprojectname$.nmf" />
+    <Compile Include="WebApp.cc" />
+    <Content Include="stub.html" />
+    <Content Include="stub.nmf" />
   </ItemGroup>
-  <Import Project="$(MSBuildExtensionsPath)\Google\NaCl\1.0\NaCl.Common.targets" />  
+
+
+  <Import Project="$(MSBuildExtensionsPath)\Google\NaCl\1.0\NaCl.Common.targets" />
+  
 </Project>
