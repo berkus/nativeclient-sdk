@@ -32,8 +32,14 @@ nacl_install_root = os.getenv(
     'NACL_INSTALL_ROOT', os.path.join('C:%s' % os.sep, 'inetpub', 'wwwroot'))
 install_dir = os.path.join(nacl_install_root, 'load_progress')
 
-app_files = [
+common_files = [
     'check_browser.js',
+    ]
+common_files = [
+    os.path.join(os.path.dirname(os.getcwd()), 'common', common_file)
+    for common_file in common_files]
+
+app_files = [
     'load_progress.html',
     'load_progress.nmf',
     ]
@@ -41,4 +47,8 @@ app_files = [
 install_app = nacl_env.Install(dir=install_dir,
                                source=opt_nexes + app_files)
 
-nacl_env.Alias('install', source=[install_app])
+common_dir = os.path.join(nacl_install_root, 'common')
+install_common = nacl_env.Install(dir=common_dir, source=common_files)
+nacl_env.Alias('install',
+               source=[install_app, install_common])
+
