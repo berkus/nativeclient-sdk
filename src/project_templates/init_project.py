@@ -55,7 +55,7 @@ CC_SOURCE_FILES = ['build.scons', '%s.cc' % PROJECT_FILE_NAME]
 HTML_FILES = ['%s.html' % PROJECT_FILE_NAME]
 
 
-def Error(Exception):
+class Error(Exception):
   pass
 
 
