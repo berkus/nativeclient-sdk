@@ -1,4 +1,5 @@
 vars = {
+  "chrome_milestone": "16",
   "chrome_rev": "107150",
   "chromium_trunk": "http://src.chromium.org/svn/branches/912",
   # Get PPAPI directly from Chrome, not via the NaCl repo.
