@@ -38,7 +38,7 @@ def Archive(revision, chrome_milestone):
   full_dst = 'gs://%s' % bucket_path
   subprocess.check_call(
       '/b/build/scripts/slave/gsutil cp -a public-read %s %s' % (
-          src, full_dst))
+          src, full_dst), shell=True)
   url = 'https://commondatastorage.googleapis.com/%s' % bucket_path
   print '@@@STEP_LINK@download@%s@@@' % url
   sys.stdout.flush()
