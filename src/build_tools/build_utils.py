@@ -19,13 +19,32 @@ import sys
 
 from nacl_sdk_scons import nacl_utils
 
+
+def ChromeMilestone():
+  '''Extract chrome_milestone from src/DEPS
+
+  Returns:
+    Chrome milestone variable value from src/DEPS.
+  '''
+  parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+  def From(x, y):
+    return ''
+  def Var(x):
+    return ''
+  def File(x):
+    return ''
+  with open(os.path.join(parent_dir, 'DEPS'), 'r') as fh:
+    exec(fh.read())
+  return vars.get('chrome_milestone')
+
+
 #------------------------------------------------------------------------------
 # Parameters
 
 # Revision numbers for the SDK
 MAJOR_REV = '1'
 MINOR_REV = '0'
-PLATFORM_VERSION = 'pepper_15'
+PLATFORM_VERSION = 'pepper_' + ChromeMilestone()
 
 TOOLCHAIN_AUTODETECT = "AUTODETECT"
 
