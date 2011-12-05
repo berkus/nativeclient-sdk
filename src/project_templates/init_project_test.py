@@ -104,7 +104,7 @@ class TestProjectInitializer(unittest.TestCase):
     self.mock_factory.ReplayAll()
     self.test_subject = init_project.ProjectInitializer(
         True, 'test_project', 'test/dir', 'pepper_14', self.script_dir,
-        init_os_mock)
+        self.nacl_src_dir, os_resource=init_os_mock)
     self.mock_factory.VerifyAll()
     self.InitializeResourceMocks()
 
